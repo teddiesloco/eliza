@@ -88,6 +88,14 @@ export function resolveChatViewRouting(
       capabilities: ["calendar", "events", "scheduling"],
     };
   }
+  if (viewPath === "/wallet" || viewPath.startsWith("/wallet/")) {
+    return {
+      view: "wallet",
+      primaryContext: "wallet",
+      secondaryContexts: [],
+      capabilities: ["inspect-wallet", "configure-wallet-rpc"],
+    };
+  }
   if (viewPath === "/apps/tasks" || viewPath.startsWith("/apps/tasks/")) {
     return {
       view: "projects",
@@ -160,8 +168,8 @@ export function resolveChatViewRouting(
       return {
         view: "wallet",
         primaryContext: "wallet",
-        secondaryContexts: ["documents"],
-        capabilities: ["wallet", "portfolio", "transactions"],
+        secondaryContexts: [],
+        capabilities: ["inspect-wallet", "configure-wallet-rpc"],
       };
     case "plugins":
     case "runtime":
