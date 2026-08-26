@@ -64,18 +64,13 @@ function reportViewNavigation(args: {
   viewPath?: string;
   action?: ViewNavigationAction;
 }): void {
-  try {
-    void postViewNavigationReport(args).catch((err) => {
-      // error-policy:J7 reporting must never break local navigation. Keep a
-      // failed runtime hop observable without presenting it as a page failure.
-      logger.warn(
-        `[view-navigation-report] report failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
-  } catch {
-    // error-policy:J7 synchronous environment/setup failures are equally
-    // non-blocking because browser history remains the source of UI truth.
-  }
+  void postViewNavigationReport(args).catch((err) => {
+    // error-policy:J7 reporting must never break local navigation. Keep a
+    // failed runtime hop observable without presenting it as a page failure.
+    logger.warn(
+      `[view-navigation-report] report failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
 }
 
 /** Publish the exact agent-surface the user opened. */

@@ -401,7 +401,7 @@ describe("v5 tiered action surface", () => {
 		expect(tools).toContain("MESSAGE");
 	});
 
-	it("does not preload unrelated general plugin actions for an app view", async () => {
+	it("retains unrelated context-authorized actions while promoting the focused view", async () => {
 		const notes = makeAction({
 			name: "NOTES",
 			description: "Read the notes shown in the open Notes view.",
@@ -415,10 +415,10 @@ describe("v5 tiered action surface", () => {
 		const email = makeAction({
 			name: "MESSAGE",
 			description: "Read or send email.",
-			contexts: ["general"],
+			contexts: ["notes" as AgentContext, "general"],
 		});
 		const runtime = makeRuntime({
-			actions: [notes, views, email],
+			actions: [email, notes, views],
 			responses: [
 				stage1Response({
 					contexts: ["notes"],
@@ -435,6 +435,7 @@ describe("v5 tiered action surface", () => {
 				uiView: "notes",
 				uiViewPath: "/notes",
 				uiViewCapabilities: ["get-notes", "get-note"],
+				uiViewActionNames: ["NOTES"],
 				__responseContext: {
 					primaryContext: "notes",
 					secondaryContexts: ["notes"],
@@ -447,7 +448,9 @@ describe("v5 tiered action surface", () => {
 		const tools = plannerToolNames(runtime);
 		expect(tools).toContain("NOTES");
 		expect(tools).toContain("VIEWS");
-		expect(tools).not.toContain("MESSAGE");
+		expect(tools).toContain("MESSAGE");
+		expect(tools.indexOf("NOTES")).toBeLessThan(tools.indexOf("MESSAGE"));
+		expect(tools.indexOf("VIEWS")).toBeLessThan(tools.indexOf("MESSAGE"));
 	});
 
 	it("starts a generic plugin-view turn from its registry-declared action family", async () => {
@@ -464,10 +467,10 @@ describe("v5 tiered action surface", () => {
 		const email = makeAction({
 			name: "MESSAGE",
 			description: "Read or send email.",
-			contexts: ["general"],
+			contexts: ["apps" as AgentContext, "general"],
 		});
 		const runtime = makeRuntime({
-			actions: [health, views, email],
+			actions: [email, health, views],
 			responses: [
 				stage1Response({ contexts: ["apps"], candidateActionNames: [] }),
 				plannerToolResponse("OWNER_HEALTH"),
@@ -494,7 +497,10 @@ describe("v5 tiered action surface", () => {
 		const tools = plannerToolNames(runtime);
 		expect(tools).toContain("OWNER_HEALTH");
 		expect(tools).toContain("VIEWS");
-		expect(tools).not.toContain("MESSAGE");
+		expect(tools).toContain("MESSAGE");
+		expect(tools.indexOf("OWNER_HEALTH")).toBeLessThan(
+			tools.indexOf("MESSAGE"),
+		);
 	});
 
 	it("admits an unambiguous reversed compound candidate through its own context gate", async () => {

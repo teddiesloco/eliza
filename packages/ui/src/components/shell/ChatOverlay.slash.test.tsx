@@ -84,7 +84,6 @@ const COMMANDS: SlashCommandCatalogItem[] = [
     requiresAuth: false,
     requiresElevated: false,
     surfaces: ["gui"],
-    // Single infinite thread: the overlay treats clear-chat as inert.
     target: { kind: "client", clientAction: "clear-chat" },
     source: "builtin",
   },
@@ -99,8 +98,7 @@ const COMMANDS: SlashCommandCatalogItem[] = [
     requiresAuth: false,
     requiresElevated: false,
     surfaces: ["gui"],
-    // A client command the overlay still forwards exercises the generic
-    // client-action dispatch path now that clear-chat is inert.
+    // A second client command exercises the generic client-action dispatch path.
     target: { kind: "client", clientAction: "open-command-palette" },
     source: "builtin",
   },
@@ -209,19 +207,19 @@ describe("ChatOverlay slash commands", () => {
   it("Enter on a client command runs the client action", () => {
     const slash = makeSlash();
     const { input, controller } = renderOverlay(slash);
-    // `/commands` → open-command-palette; reset commands remain inert.
+    // `/commands` → open-command-palette.
     fireEvent.change(input, { target: { value: "/commands" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(slash.openCommandPalette).toHaveBeenCalled();
     expect(controller.send).not.toHaveBeenCalled();
   });
 
-  it("Enter on /clear is inert — no clear, no send", () => {
+  it("Enter on /clear opens a fresh preserved conversation without sending", () => {
     const slash = makeSlash();
     const { input, controller } = renderOverlay(slash);
     fireEvent.change(input, { target: { value: "/clear" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(controller.clearConversation).not.toHaveBeenCalled();
+    expect(controller.clearConversation).toHaveBeenCalledTimes(1);
     expect(slash.clearChat).not.toHaveBeenCalled();
     expect(controller.send).not.toHaveBeenCalled();
     // The draft is still consumed (the command resolved), not left in the box.

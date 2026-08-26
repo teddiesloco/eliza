@@ -1247,9 +1247,9 @@ function hasPageScopedRoutingMetadata(message: Memory): boolean {
 
 /**
  * The first-party app attaches this renderer-owned metadata to chat and voice
- * turns. It is a relevance boundary, never an authority boundary: it can only
- * remove unrelated planner tools, while every retained or explicitly
- * reintroduced action still passes the ordinary role/context/policy gates.
+ * turns. It is a relevance signal, never an authority boundary: it can promote
+ * the focused action family, but it must not remove any otherwise authorized
+ * action from the model-facing catalog.
  */
 function hasUiViewPlannerScope(message: Memory): boolean {
 	const metadataCandidates = [message.content?.metadata, message.metadata];
@@ -1285,14 +1285,14 @@ function uiViewActionNames(message: Memory): Set<string> {
 	return actionNames;
 }
 
-function isUiViewScopedBaseAction(
+function uiViewActionPriority(
 	action: Action,
 	selectedContexts: readonly AgentContext[] | undefined,
 	viewActionNames: ReadonlySet<string>,
-): boolean {
+): number {
 	const actionName = normalizeActionIdentifier(action.name);
-	if (UI_VIEW_SCAFFOLD_ACTIONS.has(actionName)) return true;
-	if (viewActionNames.has(actionName)) return true;
+	if (UI_VIEW_SCAFFOLD_ACTIONS.has(actionName)) return 0;
+	if (viewActionNames.has(actionName)) return 0;
 
 	const focusedContexts = (selectedContexts ?? [])
 		.map((context) => String(context).trim().toLowerCase())
@@ -1302,12 +1302,14 @@ function isUiViewScopedBaseAction(
 				context !== "general" &&
 				!isPageScopedRoutingContext(context),
 		);
-	if (focusedContexts.length === 0) return false;
+	if (focusedContexts.length === 0) return 2;
 
 	const focused = new Set(focusedContexts);
 	return (action.contexts ?? []).some((context) =>
 		focused.has(String(context).trim().toLowerCase()),
-	);
+	)
+		? 1
+		: 2;
 }
 
 /**
@@ -3445,21 +3447,29 @@ async function collectV5PlannerCandidateActions(args: {
 		}
 	};
 
-	// App turns begin with the focused view's action family plus the two
-	// navigation/delegation scaffolds. Stage 1 can still reintroduce a named
-	// cross-view action below, so asking for Calendar while Notes is open works;
-	// the planner simply does not pay the context cost of every unrelated plugin
-	// before the user asks for one. Non-app/channel turns keep the historical
-	// complete authorized surface.
+	// View metadata changes ordering only. The complete runtime catalog still
+	// passes through the ordinary role/context/policy gates, so an ambiguous or
+	// cross-view request never loses an otherwise authorized action merely
+	// because Stage 1 did not guess its exact name.
 	const focusedViewActionNames = uiViewActionNames(args.message);
 	const baseRuntimeActions = hasUiViewPlannerScope(args.message)
-		? allRuntimeActions.filter((action) =>
-				isUiViewScopedBaseAction(
-					action,
-					args.selectedContexts,
-					focusedViewActionNames,
-				),
-			)
+		? allRuntimeActions
+				.map((action, index) => ({ action, index }))
+				.sort((left, right) => {
+					const priorityDelta =
+						uiViewActionPriority(
+							left.action,
+							args.selectedContexts,
+							focusedViewActionNames,
+						) -
+						uiViewActionPriority(
+							right.action,
+							args.selectedContexts,
+							focusedViewActionNames,
+						);
+					return priorityDelta || left.index - right.index;
+				})
+				.map(({ action }) => action)
 		: allRuntimeActions;
 	for (const action of baseRuntimeActions) {
 		const normalizedActionName = normalizeActionIdentifier(action.name);
