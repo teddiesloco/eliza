@@ -2812,6 +2812,8 @@ function AppContent() {
   // tabs. Controls only navigate; the shell reports the surface that actually
   // rendered, and Home/launcher routes clear all scoped tools.
   useEffect(() => {
+    if (startupCoordinator.phase !== "ready") return;
+    if (backendConnection?.state !== "connected") return;
     if (overlayAppSurfaceActive) return;
     if (shouldClearReportedView(navigationPath)) {
       reportUserViewClosed();
@@ -2821,7 +2823,13 @@ function AppContent() {
       resolveBuiltinTabId(activeViewSurface.viewId),
       navigationPath,
     );
-  }, [activeViewSurface.viewId, navigationPath, overlayAppSurfaceActive]);
+  }, [
+    activeViewSurface.viewId,
+    backendConnection?.state,
+    navigationPath,
+    overlayAppSurfaceActive,
+    startupCoordinator.phase,
+  ]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const scope = new SurfaceRealmScope(
