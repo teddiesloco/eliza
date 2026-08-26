@@ -11,7 +11,6 @@ import {
   Film,
   House,
   Loader2,
-  MessageSquarePlus,
   Mic,
   MicOff,
   Music,
@@ -211,9 +210,9 @@ const EMPTY_SLASH_CONTROLLER: SlashCommandController = {
 
 /**
  * The chat overlay: one always-present, ambient glass conversation
- * that floats over EVERY view. The active thread stays visually continuous
- * across surfaces; a fresh-thread action remains available when the user wants
- * a clean context boundary, while prior non-empty threads remain recoverable.
+ * that floats over EVERY view. There are no separate chats and no switcher — it
+ * is a single endless thread (the app's one active conversation, via
+ * useShellController).
  *
  * Layout is a fixed composer at the bottom with a pull-up history SHEET above
  * it. At rest the sheet is only the composer + grabber; pull the grabber UP, or
@@ -231,9 +230,9 @@ const EMPTY_SLASH_CONTROLLER: SlashCommandController = {
  *     (or, for floating text, a soft shadow) plus fixed light text, never the
  *     theme's `--txt`, so it stays legible over any substrate: a bright view, a
  *     dark view, or the warm "good evening" backdrop.
- *  2. NO CHROME/SIGNAGE — the thread speaks for itself: no message counter or
- *     tab strip; infrequent actions live in the existing composer menu, and
- *     status is a soft breath of light, not a brand-colored alert ring.
+ *  2. NO CHROME/SIGNAGE — the thread speaks for itself: no message counter, no
+ *     "new chat", no tab strip; controls dissolve into the glass, and status is
+ *     a soft breath of light, not a brand-colored alert ring.
  *
  * Pure/presentational: it takes the controller as a prop so it can be rendered
  * in isolation (stories / harness) with a mock. The app wraps it in a small
@@ -4384,12 +4383,10 @@ export function ChatOverlay({
         navigateTab: slash.navigateTab,
         navigateSettings: slash.navigateSettings,
         navigateView: slash.navigateView,
-        // A fresh context boundary is explicit and non-destructive: the
-        // controller preserves a non-empty prior conversation for navigation
-        // while opening a new greeted thread. This also prevents a deliberately
-        // long-lived session from becoming unusable at a provider context limit.
-        clearChat: controller.clearConversation,
-        newConversation: controller.clearConversation,
+        // One continuous thread: reset plumbing remains available to internal
+        // recovery flows, but slash/client actions cannot create or switch chats.
+        clearChat: () => {},
+        newConversation: () => {},
         toggleFullscreen: () => {},
         openCommandPalette: openPaletteCollapsed,
         showCommands: openPaletteCollapsed,
@@ -4402,14 +4399,7 @@ export function ChatOverlay({
         inputRef.current?.focus();
       }
     },
-    [
-      slash,
-      controller.clearConversation,
-      submitText,
-      setDraft,
-      toggleTranscriptionMode,
-      collapse,
-    ],
+    [slash, submitText, setDraft, toggleTranscriptionMode, collapse],
   );
 
   const submit = React.useCallback(() => {
@@ -5818,9 +5808,9 @@ export function ChatOverlay({
             data-chat-state={chatState}
             data-header-shown={headerVisible ? "true" : "false"}
             data-theme="dark"
-            // The active conversation id + its position in the most-recent-first
-            // list, surfaced so flows like the tutorial can observe a new-chat or a
-            // swipe-between-chats without reaching into controller internals.
+            // Preserve the active conversation identity for diagnostics and
+            // persistence without exposing thread creation or switching in the
+            // canonical one-conversation UI.
             data-conversation-id={conversationNav.activeId ?? undefined}
             data-conversation-index={conversationNav.index}
             // ONE persistent element across pill ↔ input ↔ chat (never remounts —
@@ -6624,7 +6614,7 @@ export function ChatOverlay({
                             }}
                             // Same responsive real target and 20px mark as the
                             // SoftButton controls, so the row reads as one family.
-                            className="relative shrink-0 data-[state=open]:text-txt [&_svg]:size-5"
+                            className="relative shrink-0 hover:bg-transparent data-[state=open]:text-txt [&_svg]:size-5"
                           >
                             <Glyph d={PLUS_GLYPH} className="size-5" />
                           </Button>
