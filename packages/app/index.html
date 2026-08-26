@@ -444,10 +444,12 @@
       color: var(--launch-foreground, #fdfaf7);
     }
 
-    /* Managed native windows paint only their final neutral canvas until React
-       is ready. Hide the branded shell in CSS as well as removing it below so
-       no parser/first-frame timing can expose the logo or loading copy. */
-    html[data-desktop-managed-preboot="true"] .eliza-preboot-shell {
+    /* Managed native windows and the detached assistant paint only their final
+       launch surfaces until React is ready. Hide the branded shell in CSS as
+       well as removing it below so no parser/first-frame timing can expose the
+       logo or loading copy. */
+    html[data-desktop-managed-preboot="true"] .eliza-preboot-shell,
+    html[data-chat-overlay-preboot="true"] .eliza-preboot-shell {
       display: none;
     }
 

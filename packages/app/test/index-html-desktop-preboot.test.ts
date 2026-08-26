@@ -31,6 +31,12 @@ describe("index.html desktop preboot surfaces", () => {
         document.documentElement.style.getPropertyValue("--launch-bg"),
       ).toBe("transparent");
       expect(document.getElementById("eliza-preboot-shell")).toBeNull();
+      const parsedShellProbe = document.createElement("div");
+      parsedShellProbe.className = "eliza-preboot-shell";
+      document.body.appendChild(parsedShellProbe);
+      expect(dom.window.getComputedStyle(parsedShellProbe).display).toBe(
+        "none",
+      );
       for (const surface of [
         document.documentElement,
         document.body,
