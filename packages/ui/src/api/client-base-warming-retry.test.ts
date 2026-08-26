@@ -1,9 +1,10 @@
 /**
  * Unit coverage for first-shared-turn cache-warming 503 absorption at the
  * request choke point (#18045). Transport stubbed, boot config injected, no
- * live model. Proves the client retries ONLY the two named warming codes with
- * the identical request body (same clientMessageId), honors Retry-After within
- * a bounded budget, and leaves a generic 503 / a 402 as real failures.
+ * live model. Proves the client retries only named pre-admission codes with the
+ * identical request body (same clientMessageId), absorbs the app-route startup
+ * gate, honors Retry-After within a bounded budget, and leaves a generic 503 /
+ * a 402 as real failures.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setBootConfig } from "../config/boot-config";
@@ -71,6 +72,83 @@ describe("ElizaClient warming 503 absorption (#18045)", () => {
       expect(call[1]?.body).toBe(SEND_BODY);
     }
     expect(out).toEqual(expect.objectContaining({ ok: true }));
+  });
+
+  it("absorbs the deferred app-route startup gate before a view reads its state", async () => {
+    const request = vi
+      .fn<AgentRequestTransport["request"]>()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          503,
+          {
+            error: "feature_starting",
+            code: "feature_starting",
+            phase: "app-route-tail",
+            status: "runtime_starting",
+            retryable: true,
+          },
+          { "retry-after": "1" },
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          success: true,
+          data: { revision: 0, notes: [] },
+        }),
+      );
+
+    const client = makeClient(request);
+    const pending = client.fetch<{
+      success: boolean;
+      data: { revision: number; notes: unknown[] };
+    }>("/api/notes/state");
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(request).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(pending).resolves.toEqual({
+      success: true,
+      data: { revision: 0, notes: [] },
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a cold feature route pending beyond the shorter cache-warming budget", async () => {
+    let attempts = 0;
+    const request = vi
+      .fn<AgentRequestTransport["request"]>()
+      .mockImplementation(() => {
+        attempts += 1;
+        if (attempts <= 7) {
+          return Promise.resolve(
+            jsonResponse(
+              503,
+              {
+                error: "feature_starting",
+                code: "feature_starting",
+                phase: "agent-deferred-boot",
+                status: "pending",
+                retryable: true,
+              },
+              { "retry-after": "1" },
+            ),
+          );
+        }
+        return Promise.resolve(
+          jsonResponse(200, {
+            success: true,
+            data: { revision: 0, notes: [] },
+          }),
+        );
+      });
+
+    const client = makeClient(request);
+    const pending = client.fetch("/api/notes/state");
+    await vi.runAllTimersAsync();
+
+    await expect(pending).resolves.toMatchObject({ success: true });
+    expect(request).toHaveBeenCalledTimes(8);
   });
 
   it("marks the first shared turn and each absorbed warming retry", async () => {
@@ -141,6 +219,31 @@ describe("ElizaClient warming 503 absorption (#18045)", () => {
     expect(request).toHaveBeenCalledTimes(1);
     expect((caught as { status?: number }).status).toBe(503);
     expect((caught as { code?: string }).code).toBe("inference_unavailable");
+  });
+
+  it("surfaces a failed app-route registration instead of retrying it as startup", async () => {
+    const request = vi.fn<AgentRequestTransport["request"]>().mockResolvedValue(
+      jsonResponse(503, {
+        error: "feature_unavailable",
+        code: "feature_unavailable",
+        phase: "app-route-tail",
+        status: "failed",
+        retryable: false,
+      }),
+    );
+
+    const client = makeClient(request);
+    let caught: unknown;
+    await client.fetch("/api/notes/state").catch((error) => {
+      caught = error;
+    });
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(caught).toMatchObject({
+      status: 503,
+      code: "feature_unavailable",
+      data: expect.objectContaining({ retryable: false }),
+    });
   });
 
   it("does not retry a 402 insufficient_credits gate", async () => {

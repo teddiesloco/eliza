@@ -110,6 +110,10 @@ const SOLANA_SPL_TOKEN_PROGRAM_ID =
 let stewardAddressCache: { evm: string | null; solana: string | null } | null =
   null;
 
+/** Public addresses for the active Eliza agent's vault-backed wallets. */
+let agentAddressCache: { evm: string | null; solana: string | null } | null =
+  null;
+
 function normalizeWalletSource(
   value: string | undefined,
 ): "local" | "cloud" | null {
@@ -137,6 +141,29 @@ function readValidatedSolanaAddress(value: string | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Publish the active agent's public wallet identities to read-only wallet
+ * surfaces. Private keys remain in the vault; this cache contains addresses
+ * only and therefore does not require the opt-in process-env signing bridge.
+ */
+export function cacheAgentWalletAddresses(addresses: WalletAddresses): void {
+  const evmAddress = addresses.evmAddress
+    ? readValidatedEvmAddress(addresses.evmAddress)
+    : null;
+  const solanaAddress = addresses.solanaAddress
+    ? readValidatedSolanaAddress(addresses.solanaAddress)
+    : null;
+
+  if (addresses.evmAddress && !evmAddress) {
+    throw new TypeError("wallet: invalid agent EVM address");
+  }
+  if (addresses.solanaAddress && !solanaAddress) {
+    throw new TypeError("wallet: invalid agent Solana address");
+  }
+
+  agentAddressCache = { evm: evmAddress, solana: solanaAddress };
 }
 
 // A configured-but-unusable key is an operator misconfiguration, not an absent
@@ -196,6 +223,14 @@ function readStewardSolanaAddress(): string | null {
     stewardAddressCache?.solana?.trim() ??
     process.env[STEWARD_SOLANA_ADDRESS_ENV_KEY]?.trim();
   return readValidatedSolanaAddress(stewardSolana);
+}
+
+function readAgentEvmAddress(): string | null {
+  return readValidatedEvmAddress(agentAddressCache?.evm ?? undefined);
+}
+
+function readAgentSolanaAddress(): string | null {
+  return readValidatedSolanaAddress(agentAddressCache?.solana ?? undefined);
 }
 
 function readManagedEvmAddress(): string | null {
@@ -676,7 +711,8 @@ export async function initStewardWalletCache(): Promise<void> {
  * Resolution order (steward-first):
  *   1. Steward cached addresses  (`STEWARD_EVM_ADDRESS` / `STEWARD_SOLANA_ADDRESS`)
  *   2. Local private key derivation  (`EVM_PRIVATE_KEY` / `SOLANA_PRIVATE_KEY`)
- *   3. Managed address env vars  (`ELIZA_MANAGED_EVM_ADDRESS` / `ELIZA_MANAGED_SOLANA_ADDRESS`)
+ *   3. Active agent public addresses (vault-backed; no private-key export)
+ *   4. Managed address env vars  (`ELIZA_MANAGED_EVM_ADDRESS` / `ELIZA_MANAGED_SOLANA_ADDRESS`)
  */
 export function getWalletAddresses(): WalletAddresses {
   const configuredEvmSource = normalizeWalletSource(
@@ -696,6 +732,7 @@ export function getWalletAddresses(): WalletAddresses {
     evmAddress =
       readStewardEvmAddress() ??
       deriveLocalEvmAddress() ??
+      readAgentEvmAddress() ??
       readManagedEvmAddress();
   }
 
@@ -703,6 +740,7 @@ export function getWalletAddresses(): WalletAddresses {
     solanaAddress =
       readStewardSolanaAddress() ??
       deriveLocalSolanaAddress() ??
+      readAgentSolanaAddress() ??
       readManagedSolanaAddress();
   }
 

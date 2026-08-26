@@ -32,6 +32,7 @@ export * from "../ui/select";
 export * from "../ui/separator";
 export * from "../ui/settings-controls";
 export * from "../ui/skeleton";
+export * from "../ui/skeleton-layouts";
 export * from "../ui/slider";
 export * from "../ui/spinner";
 export * from "../ui/stack";

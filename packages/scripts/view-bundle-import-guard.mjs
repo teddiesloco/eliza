@@ -101,6 +101,7 @@ const LOADER_RELATIVE_IMPORT_BINDINGS = new Map([
     "../shared/AppPageSidebar.tsx",
   ],
   ["@elizaos/ui/components/shared", "../shared/index.ts"],
+  ["@elizaos/ui/components/shared/ViewHeader", "../shared/ViewHeader.tsx"],
   ["@elizaos/ui/components/ui/button", "../ui/button.tsx"],
   ["@elizaos/ui/components/ui/input", "../ui/input.tsx"],
   ["@elizaos/ui/components/ui/select", "../ui/select.tsx"],

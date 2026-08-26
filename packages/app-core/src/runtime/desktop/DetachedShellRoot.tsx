@@ -72,10 +72,6 @@ const ChatView = lazyNamedView(
   () => import("@elizaos/ui/components/pages/ChatView"),
   "ChatView",
 );
-const ConfigPageView = lazyNamedView(
-  () => import("@elizaos/ui/components/pages/ConfigPageView"),
-  "ConfigPageView",
-);
 const CloudDashboard = lazyNamedView(
   () => import("@elizaos/ui/components/pages/ElizaCloudDashboard"),
   "CloudDashboard",
@@ -83,22 +79,6 @@ const CloudDashboard = lazyNamedView(
 const TriggersView = lazyNamedView(
   () => import("@elizaos/ui/components/pages/TriggersView"),
   "TriggersView",
-);
-const ReleaseCenterView = lazyNamedView(
-  () => import("@elizaos/ui/components/pages/ReleaseCenterView"),
-  "ReleaseCenterView",
-);
-const PermissionsSection = lazyNamedView(
-  () => import("@elizaos/ui/components/settings/PermissionsSection"),
-  "PermissionsSection",
-);
-const ProviderSwitcher = lazyNamedView(
-  () => import("@elizaos/ui/components/settings/ProviderSwitcher"),
-  "ProviderSwitcher",
-);
-const VoiceConfigView = lazyNamedView(
-  () => import("@elizaos/ui/components/settings/VoiceConfigView"),
-  "VoiceConfigView",
 );
 
 // Static import: PluginsPageView is statically imported by App.tsx and
@@ -130,28 +110,18 @@ function DetachedSettingsSectionView({
 }: {
   section?: string;
 }): JSX.Element {
-  switch (section) {
-    case "ai-model":
-      return <ProviderSwitcher />;
-    case "cloud":
-      return getBootConfig().branding.cloudOnly === true ? (
-        <SettingsView initialSection={section} />
-      ) : (
-        <CloudDashboard />
-      );
-    case "coding-agents":
-      return <CodingAgentSettingsSection />;
-    case "wallet-rpc":
-      return <ConfigPageView embedded />;
-    case "voice":
-      return <VoiceConfigView />;
-    case "permissions":
-      return <PermissionsSection />;
-    case "updates":
-      return <ReleaseCenterView />;
-    default:
-      return <SettingsView initialSection={section} />;
+  // Cloud is a dashboard destination in the standard product, not a Settings
+  // registry section. Preserve that route contract while converging every
+  // actual Settings section through the canonical controller below.
+  if (section === "cloud" && getBootConfig().branding.cloudOnly !== true) {
+    return <CloudDashboard />;
   }
+
+  // Task-coordinator settings remain an external slot until they register a
+  // canonical Settings section of their own.
+  if (section === "coding-agents") return <CodingAgentSettingsSection />;
+
+  return <SettingsView initialSection={section} />;
 }
 
 function DetachedChatView(): JSX.Element {

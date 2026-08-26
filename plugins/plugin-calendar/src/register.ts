@@ -17,7 +17,7 @@ registerAppShellPage({
   order: 910,
   viewKind: "release",
   surface: {
-    header: "fullscreen",
+    header: "normal",
     capabilities: ["agent-surface"],
   },
   loader: () =>

@@ -1,7 +1,7 @@
 /**
  * `<TokenLogo>` renders a token's logo image, preferring `preferredLogoUrl`
  * over the chain's native/contract CDN lookup, and falling back to a
- * monogram badge (first letter of the symbol) on load failure or when no URL
+ * neutral monogram badge on load failure or when no URL
  * resolves.
  */
 import * as React from "react";
@@ -47,6 +47,7 @@ export function TokenLogo({
       ? preferredResolved
       : defaultResolved;
   const icon = chainIcon(chain);
+  const monogram = symbol.trim().slice(0, 2).toUpperCase() || icon.code;
 
   if (url) {
     return (
@@ -63,10 +64,12 @@ export function TokenLogo({
   }
   return (
     <span
-      className={`inline-flex items-center justify-center shrink-0 rounded-full font-mono font-bold bg-bg-muted ${icon.cls}`}
+      className="inline-flex shrink-0 items-center justify-center rounded-full bg-surface font-mono font-semibold tracking-tight text-txt ring-1 ring-border"
       style={{ width: size, height: size, fontSize: size * 0.38 }}
+      role="img"
+      aria-label={`${symbol || chain} token`}
     >
-      {symbol.charAt(0).toUpperCase()}
+      {monogram}
     </span>
   );
 }

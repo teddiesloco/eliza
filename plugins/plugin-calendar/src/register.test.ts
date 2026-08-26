@@ -30,7 +30,7 @@ describe("Calendar app registration", () => {
     ]);
     expect(pages[0]?.loader).toBeTypeOf("function");
     expect(pages[0]?.surface).toEqual({
-      header: "fullscreen",
+      header: "normal",
       capabilities: ["agent-surface"],
     });
     const loaded = await pages[0]?.loader?.();

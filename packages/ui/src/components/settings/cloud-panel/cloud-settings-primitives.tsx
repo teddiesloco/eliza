@@ -64,7 +64,12 @@ export function SettingsStack({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("flex flex-col gap-10", className)} {...props} />;
+  return (
+    <div
+      className={cn("flex flex-col gap-7 min-[700px]:gap-10", className)}
+      {...props}
+    />
+  );
 }
 
 /**

@@ -1,29 +1,8 @@
-/**
- * One selectable row in the trajectory list sidebar: source label, status and
- * source color dots, call count, and duration. Selecting it drives which run
- * the trajectory viewer shows.
- */
+/** One full-width grouped row in the trajectory history list. */
+import { ChevronRight } from "lucide-react";
 import type * as React from "react";
 
-import { SidebarContent } from "../sidebar";
-
-function InlineMeta({
-  color,
-  label,
-}: {
-  color?: string;
-  label: React.ReactNode;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-2xs font-medium text-muted/85">
-      <span
-        className="size-1.5 rounded-full"
-        style={color ? { backgroundColor: color } : undefined}
-      />
-      <span>{label}</span>
-    </span>
-  );
-}
+import { SettingsRow } from "../../settings/settings-layout";
 
 export interface TrajectorySidebarItemProps {
   active?: boolean;
@@ -43,7 +22,7 @@ export function TrajectorySidebarItem({
   callCount,
   durationLabel,
   onSelect,
-  sourceColor,
+  sourceColor: _sourceColor,
   sourceLabel,
   statusColor,
   statusLabel,
@@ -51,28 +30,32 @@ export function TrajectorySidebarItem({
   tokenLabel,
 }: TrajectorySidebarItemProps) {
   return (
-    <SidebarContent.Item
+    <SettingsRow
       active={active}
       onClick={onSelect}
-      aria-current={active ? "page" : undefined}
-    >
-      <SidebarContent.ItemIcon
-        active={active}
-        className="text-xs-tight font-bold"
-      >
-        {callCount}
-      </SidebarContent.ItemIcon>
-      <SidebarContent.ItemBody>
-        <SidebarContent.ItemTitle>{title}</SidebarContent.ItemTitle>
-        <SidebarContent.ItemDescription>
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <InlineMeta label={sourceLabel} color={sourceColor} />
-            <InlineMeta label={statusLabel} color={statusColor} />
-            <span>{tokenLabel}</span>
-            <span>{durationLabel}</span>
+      label={title}
+      description={
+        <span className="flex min-w-0 flex-wrap gap-x-2 gap-y-0.5">
+          <span className="max-w-full truncate">{sourceLabel}</span>
+          <span>{tokenLabel}</span>
+          <span>{durationLabel}</span>
+        </span>
+      }
+      trailing={
+        <span className="flex items-center gap-2 text-xs text-[color:var(--settings-muted)]">
+          <span className="hidden min-[360px]:inline">{callCount} calls</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className="size-1.5 rounded-full bg-[var(--settings-muted)]"
+              style={statusColor ? { backgroundColor: statusColor } : undefined}
+            />
+            <span className="sr-only">{statusLabel}</span>
           </span>
-        </SidebarContent.ItemDescription>
-      </SidebarContent.ItemBody>
-    </SidebarContent.Item>
+          <ChevronRight className="size-4" aria-hidden />
+        </span>
+      }
+      className="min-h-[68px]"
+    />
   );
 }

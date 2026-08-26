@@ -660,8 +660,9 @@ export function useAvailableViews(
     );
     // Availability gates apply to the in-process fallback registration, not to
     // a richer network entry that won the web/desktop merge for the same id.
-    // Cloud intentionally has both: its managed console page is unavailable on
-    // a local runtime while plugin-elizacloud's remote account view is valid.
+    // Cloud intentionally has both an account-dashboard fallback and
+    // plugin-elizacloud's live runtime view; either may own the same id without
+    // suppressing the authoritative network entry.
     const networkEntries = new Set(networkViews);
     const runtimeAvailable = merged.filter(
       (view) =>

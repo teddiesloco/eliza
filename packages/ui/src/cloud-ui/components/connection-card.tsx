@@ -10,9 +10,24 @@ import {
   ChevronDown,
   Copy,
   Loader2,
+  RefreshCw,
   XCircle,
 } from "lucide-react";
 import type * as React from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  SettingsGroup,
+  SettingsRow,
+} from "../../components/settings/settings-layout";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -61,11 +76,15 @@ interface ConnectionCardProps {
   setupContent?: React.ReactNode;
   /** Content shown when not configured */
   notConfiguredMessage?: string;
-  /** Message shown when the status probe failed (status === "error"). */
+  /**
+   * Diagnostic returned by the provider when its status probe fails.
+   * ConnectionCard deliberately does not repeat this message in every row;
+   * ConnectionStatusNotice owns the single section-level recovery state.
+   */
   errorMessage?: string;
-  /** Optional retry affordance rendered in the error state. */
+  /** Optional retry included in the section-level recovery action. */
   onRetry?: () => void;
-  /** Label for the retry button in the error state. */
+  /** @deprecated Recovery copy is standardized by ConnectionStatusNotice. */
   retryLabel?: string;
   /** Status badge shown in the header when connected */
   statusBadge?: React.ReactNode;
@@ -77,13 +96,20 @@ function ConnectionLoadingCard({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "min-w-0 overflow-hidden rounded-sm border bg-card text-card-foreground",
+        "settings-surface min-w-0 overflow-hidden rounded-[16px] border border-[color:var(--settings-hairline)] bg-[var(--settings-panel)]",
         className,
       )}
+      role="status"
+      aria-label="Checking connection status"
     >
-      <div className="flex items-center justify-center py-8">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
+      <SettingsRow
+        label={
+          <span className="block h-4 w-32 max-w-full animate-pulse rounded bg-[var(--settings-fill-strong)]" />
+        }
+        description={
+          <span className="mt-1 block h-3 w-20 max-w-full animate-pulse rounded bg-[var(--settings-fill)]" />
+        }
+      />
     </div>
   );
 }
@@ -113,6 +139,107 @@ interface ConnectionIdentityPanelProps {
   actions?: React.ReactNode;
 }
 
+interface UnavailableConnection {
+  name: string;
+  retry?: () => void;
+}
+
+type ConnectionStatusReporter = (
+  id: string,
+  connection: UnavailableConnection | null,
+) => void;
+
+const ConnectionStatusReportContext =
+  createContext<ConnectionStatusReporter | null>(null);
+const UnavailableConnectionsContext = createContext<
+  readonly UnavailableConnection[]
+>([]);
+
+/**
+ * Collects provider-level probe failures without coupling each connector to
+ * section layout. A section can then render one quiet recovery row instead of
+ * repeating a destructive alert inside every connector.
+ */
+function ConnectionStatusProvider({ children }: { children: React.ReactNode }) {
+  const [unavailable, setUnavailable] = useState<
+    Map<string, UnavailableConnection>
+  >(() => new Map());
+
+  const report = useCallback<ConnectionStatusReporter>((id, connection) => {
+    setUnavailable((current) => {
+      if (connection === null) {
+        if (!current.has(id)) return current;
+        const next = new Map(current);
+        next.delete(id);
+        return next;
+      }
+
+      const previous = current.get(id);
+      if (
+        previous?.name === connection.name &&
+        previous.retry === connection.retry
+      ) {
+        return current;
+      }
+      const next = new Map(current);
+      next.set(id, connection);
+      return next;
+    });
+  }, []);
+
+  const entries = useMemo(() => [...unavailable.values()], [unavailable]);
+
+  return (
+    <ConnectionStatusReportContext.Provider value={report}>
+      <UnavailableConnectionsContext.Provider value={entries}>
+        {children}
+      </UnavailableConnectionsContext.Provider>
+    </ConnectionStatusReportContext.Provider>
+  );
+}
+
+/** One compact, section-owned degraded-state signal for all failed probes. */
+function ConnectionStatusNotice() {
+  const unavailable = useContext(UnavailableConnectionsContext);
+  const retryable = useMemo(
+    () => unavailable.filter((connection) => connection.retry),
+    [unavailable],
+  );
+  const retryAll = useCallback(() => {
+    for (const connection of retryable) connection.retry?.();
+  }, [retryable]);
+
+  if (unavailable.length === 0) return null;
+
+  return (
+    <SettingsGroup
+      data-slot="connection-status-notice"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      <SettingsRow
+        icon={AlertTriangle}
+        label="Status checks unavailable"
+        description="Setup is hidden until checks recover."
+        control={
+          retryable.length > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Retry unavailable connections"
+              onClick={retryAll}
+            >
+              <RefreshCw className="size-4" aria-hidden />
+              Retry
+            </Button>
+          ) : null
+        }
+      />
+    </SettingsGroup>
+  );
+}
+
 function ConnectionIdentityPanel({
   icon,
   title,
@@ -125,7 +252,7 @@ function ConnectionIdentityPanel({
   return (
     <div
       className={cn(
-        "flex items-center gap-4 p-4 bg-bg-muted rounded-sm",
+        "flex items-center gap-4 rounded-[12px] bg-[var(--settings-secondary)] p-4",
         className,
       )}
     >
@@ -163,11 +290,12 @@ const calloutToneClassName: Record<
 > = {
   // Brand rule: blue is banned. Existing `tone="blue"` call sites now
   // render as a neutral informational callout instead.
-  blue: "bg-white/5 border-white/15 text-foreground dark:text-white/80",
+  blue: "border-[color:var(--settings-hairline)] bg-[var(--settings-fill)] text-[color:var(--settings-foreground)]",
   green: "bg-status-success-bg border-status-success/30 text-status-success",
   red: "bg-destructive-subtle border-destructive/30 text-destructive",
   yellow: "bg-status-warning-bg border-status-warning/30 text-status-warning",
-  muted: "bg-bg-muted border-transparent text-foreground",
+  muted:
+    "border-[color:var(--settings-hairline)] bg-[var(--settings-fill)] text-[color:var(--settings-foreground)]",
 };
 
 function ConnectionCallout({
@@ -180,7 +308,7 @@ function ConnectionCallout({
   return (
     <div
       className={cn(
-        "p-3 border rounded-sm",
+        "rounded-[12px] border p-3",
         calloutToneClassName[tone],
         className,
       )}
@@ -227,7 +355,7 @@ function ConnectionInstructions({
       </CollapsibleTrigger>
       <CollapsibleContent
         className={cn(
-          "p-4 bg-bg-muted rounded-b-lg border-t",
+          "rounded-b-[12px] border-t border-[color:var(--settings-hairline)] bg-[var(--settings-secondary)] p-4",
           contentClassName,
         )}
       >
@@ -253,7 +381,12 @@ function ConnectionCopyRow({
   className,
 }: ConnectionCopyRowProps) {
   return (
-    <div className={cn("p-3 bg-bg-muted rounded-sm space-y-2", className)}>
+    <div
+      className={cn(
+        "space-y-2 rounded-[12px] bg-[var(--settings-secondary)] p-3",
+        className,
+      )}
+    >
       <Label className="text-xs text-muted-foreground">{label}</Label>
       <div className="flex items-center gap-2">
         <code className="flex-1 text-xs bg-background p-2 rounded-sm border overflow-x-auto">
@@ -337,7 +470,7 @@ function ConnectionFooterActions({
   return (
     <div
       className={cn(
-        "flex items-center justify-between pt-2 border-t",
+        "flex items-center justify-between border-t border-[color:var(--settings-hairline)] pt-2",
         className,
       )}
     >
@@ -355,77 +488,124 @@ function ConnectionCard({
   connectedContent,
   setupContent,
   notConfiguredMessage = "This integration is not configured. Please contact your administrator.",
-  errorMessage = "We couldn't load this connection's status. Please try again.",
   onRetry,
-  retryLabel = "Retry",
   statusBadge,
   className,
 }: ConnectionCardProps) {
-  if (status === "loading") {
-    return <ConnectionLoadingCard className={className} />;
-  }
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
+  const reportStatus = useContext(ConnectionStatusReportContext);
+  const retryRef = useRef(onRetry);
+  retryRef.current = onRetry;
+  const retryConnection = useCallback(() => retryRef.current?.(), []);
+  const canRetry = Boolean(onRetry);
+
+  useEffect(() => {
+    if (status === "loading" || status === "error") setOpen(false);
+  }, [status]);
+
+  useEffect(() => {
+    if (!reportStatus) return;
+    reportStatus(
+      contentId,
+      status === "error"
+        ? {
+            name,
+            retry: canRetry ? retryConnection : undefined,
+          }
+        : null,
+    );
+    return () => reportStatus(contentId, null);
+  }, [canRetry, contentId, name, reportStatus, retryConnection, status]);
+
+  const statusLabel =
+    status === "loading"
+      ? "Checking connection"
+      : status === "connected"
+        ? "Connected"
+        : status === "disconnected"
+          ? "Not connected"
+          : "Unavailable";
+  const actionLabel = open
+    ? "Close"
+    : status === "connected"
+      ? "Manage"
+      : status === "disconnected"
+        ? "Set up"
+        : "Details";
 
   return (
-    <div
-      data-slot="connection-card"
-      className={cn(
-        "min-w-0 overflow-hidden rounded-sm border bg-card text-card-foreground",
-        className,
-      )}
+    <SettingsRow
+      className={cn("settings-surface", className)}
+      label={
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-[var(--settings-secondary)] [&>svg]:size-[18px]">
+            {icon}
+          </span>
+          <span className="min-w-0 truncate">{name}</span>
+        </span>
+      }
+      description={
+        status === "loading" ? (
+          <span className="flex items-center gap-2" aria-live="polite">
+            <span className="block h-3 w-20 animate-pulse rounded bg-[var(--settings-fill-strong)]" />
+            <span className="sr-only">{statusLabel}</span>
+          </span>
+        ) : (
+          <span aria-live="polite">{statusLabel}</span>
+        )
+      }
+      control={
+        status === "loading" ? (
+          <span className="block h-8 w-20 animate-pulse rounded-lg bg-[var(--settings-fill)]" />
+        ) : status === "error" ? null : (
+          <span className="flex items-center gap-2">
+            {status === "connected" && statusBadge ? (
+              <span className="hidden sm:inline-flex">{statusBadge}</span>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-expanded={open}
+              aria-controls={contentId}
+              aria-label={`${actionLabel} ${name}`}
+              onClick={() => setOpen((current) => !current)}
+            >
+              {actionLabel}
+              <ChevronDown
+                className={cn(
+                  "size-4 transition-transform",
+                  open && "rotate-180",
+                )}
+                aria-hidden
+              />
+            </Button>
+          </span>
+        )
+      }
     >
-      {/* Header */}
-      <div className="flex min-w-0 flex-col gap-1.5 p-4 sm:p-6">
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <h3 className="flex min-w-0 items-center gap-2 text-xl font-semibold leading-tight tracking-tight sm:text-2xl">
-              <span className="shrink-0 [&>svg]:h-5 [&>svg]:w-5">{icon}</span>
-              <span className="min-w-0 break-words">{name}</span>
-            </h3>
-            <p className="mt-1.5 break-words text-sm text-muted-foreground">
-              {status === "not-configured"
-                ? `${name} integration is not configured`
-                : status === "error"
-                  ? `Couldn't load ${name} status`
-                  : description}
-            </p>
-          </div>
-          {status === "connected" && statusBadge ? (
-            <div className="shrink-0 self-start">{statusBadge}</div>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="min-w-0 p-4 pt-0 sm:p-6 sm:pt-0">
-        {status === "not-configured" && (
-          <div className="p-4 bg-bg-muted rounded-sm">
-            <p className="text-sm text-muted-foreground">
-              {notConfiguredMessage}
-            </p>
-          </div>
-        )}
-        {status === "error" && (
-          <div
-            role="alert"
-            className="flex flex-col gap-3 p-4 bg-destructive/10 border border-destructive/30 rounded-sm"
-          >
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="size-4 mt-0.5 shrink-0 text-destructive" />
-              <p className="text-sm text-destructive">{errorMessage}</p>
+      {open && status !== "loading" && status !== "error" ? (
+        <div
+          id={contentId}
+          data-slot="connection-card-content"
+          className="min-w-0 border-t border-[color:var(--settings-hairline)] pb-1 pt-4"
+        >
+          <p className="mb-4 break-words text-sm leading-5 text-[color:var(--settings-muted)]">
+            {description}
+          </p>
+          {status === "not-configured" ? (
+            <div className="rounded-[12px] bg-[var(--settings-secondary)] p-4">
+              <p className="text-sm text-[color:var(--settings-muted)]">
+                {notConfiguredMessage}
+              </p>
             </div>
-            {onRetry && (
-              <div>
-                <Button variant="outline" size="sm" onClick={onRetry}>
-                  {retryLabel}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-        {status === "connected" && connectedContent}
-        {status === "disconnected" && setupContent}
-      </div>
-    </div>
+          ) : null}
+          {status === "connected" ? connectedContent : null}
+          {status === "disconnected" ? setupContent : null}
+        </div>
+      ) : null}
+    </SettingsRow>
   );
 }
 
@@ -440,4 +620,6 @@ export {
   ConnectionIdentityPanel,
   ConnectionInstructions,
   ConnectionLoadingCard,
+  ConnectionStatusNotice,
+  ConnectionStatusProvider,
 };

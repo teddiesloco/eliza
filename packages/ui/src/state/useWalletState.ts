@@ -48,7 +48,7 @@ import {
   saveComputerUseEnabled,
   saveWalletEnabled,
 } from "./persistence";
-import type { InventoryChainFilters } from "./types";
+import type { InventoryChainFilters, WalletResourceStatus } from "./types";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -183,6 +183,19 @@ export function useWalletState({
   const [walletNfts, setWalletNfts] = useState<WalletNftsResponse | null>(null);
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletNftsLoading, setWalletNftsLoading] = useState(false);
+  const [walletConfigStatus, setWalletConfigStatus] =
+    useState<WalletResourceStatus>("idle");
+  const [walletConfigError, setWalletConfigError] = useState<string | null>(
+    null,
+  );
+  const [walletBalancesStatus, setWalletBalancesStatus] =
+    useState<WalletResourceStatus>("idle");
+  const [walletBalancesError, setWalletBalancesError] = useState<string | null>(
+    null,
+  );
+  const [walletNftsStatus, setWalletNftsStatus] =
+    useState<WalletResourceStatus>("idle");
+  const [walletNftsError, setWalletNftsError] = useState<string | null>(null);
   const [inventoryView, setInventoryView] = useState<"tokens" | "nfts">(
     "tokens",
   );
@@ -242,9 +255,11 @@ export function useWalletState({
   const walletExportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const walletConfigRequestRef = useRef(0);
+  const walletBalancesRequestRef = useRef(0);
+  const walletNftsRequestRef = useRef(0);
 
-  const fetchWalletConfig = useCallback(async () => {
-    const cfg = await client.getWalletConfig();
+  const applyWalletConfig = useCallback((cfg: WalletConfigStatus) => {
     setWalletConfig(cfg);
     setWalletAddresses({
       evmAddress: cfg.evmAddress,
@@ -252,8 +267,35 @@ export function useWalletState({
     });
     setWallets(Array.isArray(cfg.wallets) ? cfg.wallets : []);
     setWalletPrimaryMap(cfg.primary ?? null);
-    return cfg;
   }, []);
+
+  const fetchWalletConfig = useCallback(async () => {
+    const requestId = walletConfigRequestRef.current + 1;
+    walletConfigRequestRef.current = requestId;
+    setWalletConfigStatus("loading");
+    setWalletConfigError(null);
+
+    try {
+      const cfg = await client.getWalletConfig();
+      if (walletConfigRequestRef.current === requestId) {
+        applyWalletConfig(cfg);
+        setWalletConfigError(null);
+        setWalletConfigStatus("ready");
+      }
+      return cfg;
+    } catch (err) {
+      // error-policy:J4 config failure is scoped to config and preserves any
+      // previously rendered wallet data. Only the newest request may publish
+      // its result, so an older poll cannot undo a newer save or refresh.
+      if (walletConfigRequestRef.current === requestId) {
+        setWalletConfigError(
+          `Failed to load wallet config: ${err instanceof Error ? err.message : "network error"}`,
+        );
+        setWalletConfigStatus("error");
+      }
+      throw err;
+    }
+  }, [applyWalletConfig]);
 
   const hasWalletSource = useCallback(
     (
@@ -299,7 +341,7 @@ export function useWalletState({
       );
       if (evmConnected && solanaWarning) {
         return {
-          text: `EVM cloud wallet connected. Solana cloud wallet is unavailable because ${normalizeCloudWalletNotice(solanaWarning)}.`,
+          text: `Ethereum + Base cloud wallet connected. Solana cloud wallet is unavailable because ${normalizeCloudWalletNotice(solanaWarning)}.`,
           tone: "info",
         };
       }
@@ -309,7 +351,7 @@ export function useWalletState({
       );
       if (solanaConnected && evmWarning) {
         return {
-          text: `Solana cloud wallet connected. EVM cloud wallet is unavailable because ${normalizeCloudWalletNotice(evmWarning)}.`,
+          text: `Solana cloud wallet connected. Ethereum + Base cloud wallet is unavailable because ${normalizeCloudWalletNotice(evmWarning)}.`,
           tone: "info",
         };
       }
@@ -324,48 +366,78 @@ export function useWalletState({
   const loadWalletConfig = useCallback(async () => {
     try {
       await fetchWalletConfig();
-      setWalletError(null);
-    } catch (err) {
-      setWalletError(
-        `Failed to load wallet config: ${err instanceof Error ? err.message : "network error"}`,
-      );
+    } catch {
+      // fetchWalletConfig owns the typed lifecycle; public loads remain
+      // fire-and-forget safe for effects and polling callers.
     }
   }, [fetchWalletConfig]);
 
   const loadBalances = useCallback(async () => {
+    const requestId = walletBalancesRequestRef.current + 1;
+    walletBalancesRequestRef.current = requestId;
     setWalletLoading(true);
-    setWalletError(null);
+    setWalletBalancesStatus("loading");
+    setWalletBalancesError(null);
     try {
       const b = await client.getWalletBalances();
-      setWalletBalances(b);
+      if (walletBalancesRequestRef.current === requestId) {
+        setWalletBalances(b);
+        setWalletBalancesStatus("ready");
+      }
     } catch (err) {
-      setWalletError(
-        `Failed to fetch balances: ${err instanceof Error ? err.message : "network error"}`,
-      );
+      // error-policy:J4 balances own their error lifecycle. A later NFT/config
+      // success must never erase this failure or turn null data into $0.
+      if (walletBalancesRequestRef.current === requestId) {
+        setWalletBalancesError(
+          `Failed to fetch balances: ${err instanceof Error ? err.message : "network error"}`,
+        );
+        setWalletBalancesStatus("error");
+      }
+    } finally {
+      if (walletBalancesRequestRef.current === requestId) {
+        setWalletLoading(false);
+      }
     }
-    setWalletLoading(false);
   }, []);
 
   const loadNfts = useCallback(async () => {
+    const requestId = walletNftsRequestRef.current + 1;
+    walletNftsRequestRef.current = requestId;
     setWalletNftsLoading(true);
-    setWalletError(null);
+    setWalletNftsStatus("loading");
+    setWalletNftsError(null);
     try {
       const n = await client.getWalletNfts();
-      setWalletNfts(n);
+      if (walletNftsRequestRef.current === requestId) {
+        setWalletNfts(n);
+        setWalletNftsStatus("ready");
+      }
     } catch (err) {
-      // A 404 means no NFT route is mounted on this surface (the always-loaded
-      // plugin-wallet returns an empty set; only opt-in plugins fetch NFTs) —
-      // treat it as "no NFTs", not a failure, so a missing route never paints
-      // the shared wallet error banner.
-      if (isApiError(err) && err.status === 404) {
-        setWalletNfts({ evm: [], solana: null });
-      } else {
-        setWalletError(
-          `Failed to fetch NFTs: ${err instanceof Error ? err.message : "network error"}`,
-        );
+      // error-policy:J4 an absent optional NFT capability is not evidence of an
+      // empty wallet. Mark it unavailable (and stop polling it) without
+      // contaminating balances/config; transient failures remain scoped errors.
+      if (walletNftsRequestRef.current === requestId) {
+        const unavailable =
+          isApiError(err) &&
+          (err.status === 404 ||
+            err.status === 501 ||
+            err.code === "wallet_nfts_unavailable");
+        if (unavailable) {
+          setWalletNfts(null);
+          setWalletNftsError(null);
+          setWalletNftsStatus("unavailable");
+        } else {
+          setWalletNftsError(
+            `Failed to fetch NFTs: ${err instanceof Error ? err.message : "network error"}`,
+          );
+          setWalletNftsStatus("error");
+        }
+      }
+    } finally {
+      if (walletNftsRequestRef.current === requestId) {
+        setWalletNftsLoading(false);
       }
     }
-    setWalletNftsLoading(false);
   }, []);
 
   const handleWalletApiKeySave = useCallback(
@@ -664,6 +736,12 @@ export function useWalletState({
       walletNfts,
       walletLoading,
       walletNftsLoading,
+      walletConfigStatus,
+      walletConfigError,
+      walletBalancesStatus,
+      walletBalancesError,
+      walletNftsStatus,
+      walletNftsError,
       inventoryView,
       walletExportData,
       walletExportVisible,

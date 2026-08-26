@@ -79,17 +79,6 @@
       "lines": [786, 809]
     },
     {
-      "id": "calendar-day-runtime-presentation",
-      "rule": "visual-override",
-      "file": "plugins/plugin-calendar/src/components/calendar/SimpleCalendarView.tsx",
-      "symbol": "Button",
-      "owner": "plugin-calendar",
-      "reason": "Calendar day cells combine responsive grid geometry with runtime selected and outside-month paint supplied by the calendar domain; the canonical static variants cannot represent that data-driven presentation.",
-      "reviewBy": "2026-11-24",
-      "matchCount": 1,
-      "lines": [250]
-    },
-    {
       "id": "calendar-event-runtime-palette",
       "rule": "visual-override",
       "file": "plugins/plugin-calendar/src/components/CalendarSection.tsx",

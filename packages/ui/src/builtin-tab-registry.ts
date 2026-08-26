@@ -72,6 +72,12 @@ export interface BuiltinTabMetadata {
    */
   readonly aliases?: readonly string[];
   /**
+   * Retired browser paths that still resolve to this tab before the shell
+   * replaces them with the tab's canonical `TAB_PATHS` route. Path aliases
+   * belong here with the builtin owner instead of in renderer/platform code.
+   */
+  readonly pathAliases?: readonly string[];
+  /**
    * Builtin-level surface manifest (or path predicate for tabs whose launcher
    * root differs from their sub-routes). Omitted = no builtin policy (fall
    * through to downstream resolution).
@@ -128,6 +134,7 @@ export const BUILTIN_TAB_METADATA: readonly BuiltinTabMetadata[] = [
   },
   // ── Aliases (canonical id + legacy id that routes onto it) ──
   { id: "automations", aliases: ["triggers"] },
+  { id: "documents", pathAliases: ["/documents", "/knowledge"] },
 ] as const;
 
 /** Fast id -> metadata lookup, including alias ids. */
@@ -152,6 +159,23 @@ const BUILTIN_TAB_BY_ID: ReadonlyMap<string, BuiltinTabMetadata> = (() => {
   return map;
 })();
 
+/** Fast retired-path -> canonical builtin metadata lookup. */
+const BUILTIN_TAB_BY_PATH_ALIAS: ReadonlyMap<string, BuiltinTabMetadata> =
+  (() => {
+    const map = new Map<string, BuiltinTabMetadata>();
+    for (const entry of BUILTIN_TAB_METADATA) {
+      for (const pathAlias of entry.pathAliases ?? []) {
+        if (map.has(pathAlias)) {
+          throw new Error(
+            `Builtin path alias "${pathAlias}" is claimed by more than one tab`,
+          );
+        }
+        map.set(pathAlias, entry);
+      }
+    }
+    return map;
+  })();
+
 /**
  * Resolve a (possibly aliased) tab id to its canonical builtin id. Tabs that
  * are not declared builtin aliases are returned unchanged, so plugin/dynamic
@@ -159,6 +183,13 @@ const BUILTIN_TAB_BY_ID: ReadonlyMap<string, BuiltinTabMetadata> = (() => {
  */
 export function resolveBuiltinTabId(tab: string): string {
   return BUILTIN_TAB_BY_ID.get(tab)?.id ?? tab;
+}
+
+/** Resolve a normalized retired browser path to its canonical builtin tab. */
+export function resolveBuiltinTabIdForPathAlias(
+  normalizedPath: string,
+): string | null {
+  return BUILTIN_TAB_BY_PATH_ALIAS.get(normalizedPath)?.id ?? null;
 }
 
 /**

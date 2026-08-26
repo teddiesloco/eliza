@@ -5,8 +5,6 @@
  */
 import type * as React from "react";
 
-import { PagePanel } from "../page-panel";
-
 export interface TrajectoryCacheMetric {
   id?: string;
   label: React.ReactNode;
@@ -26,39 +24,38 @@ export function TrajectoryCacheStats({
   metrics,
 }: TrajectoryCacheStatsProps) {
   return (
-    <PagePanel variant="section" className="px-5 py-4">
-      <div className="mb-3 text-xs-tight font-semibold uppercase tracking-[0.16em] text-muted">
+    <section className="overflow-hidden rounded-[16px] border border-[color:var(--settings-hairline)] bg-[var(--settings-panel)]">
+      <div className="px-4 pb-2 pt-4 text-sm font-semibold text-[color:var(--settings-foreground)]">
         {heading}
       </div>
       {metrics.length === 0 ? (
-        <div className="rounded-sm border border-dashed border-border/50 px-4 py-6 text-sm text-muted">
+        <div className="px-4 pb-4 text-sm leading-5 text-[color:var(--settings-muted)]">
           {emptyLabel}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <dl className="grid grid-cols-2 border-t border-[color:var(--settings-hairline)] min-[620px]:grid-cols-4">
           {metrics.map((metric) => (
-            <PagePanel.SummaryCard
-              compact
-              className="px-4 py-3"
+            <div
+              className="border-b border-[color:var(--settings-hairline)] px-4 py-3 odd:border-r min-[620px]:border-b-0 min-[620px]:border-r min-[620px]:last:border-r-0"
               key={
                 metric.id ?? `${String(metric.label)}-${String(metric.value)}`
               }
             >
-              <div className="text-xs-tight uppercase tracking-[0.14em] text-muted">
+              <dt className="text-xs text-[color:var(--settings-muted)]">
                 {metric.label}
-              </div>
-              <div className="mt-2 text-sm font-semibold text-txt">
+              </dt>
+              <dd className="mt-1 text-sm font-semibold text-[color:var(--settings-foreground)]">
                 {metric.value}
-              </div>
+              </dd>
               {metric.meta ? (
-                <div className="mt-1 text-xs-tight text-muted">
+                <div className="mt-1 text-xs text-[color:var(--settings-muted)]">
                   {metric.meta}
                 </div>
               ) : null}
-            </PagePanel.SummaryCard>
+            </div>
           ))}
-        </div>
+        </dl>
       )}
-    </PagePanel>
+    </section>
   );
 }

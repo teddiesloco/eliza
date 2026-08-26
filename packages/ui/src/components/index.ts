@@ -344,3 +344,4 @@ export * from "./ui/toggle";
 export * from "./ui/tooltip";
 export * from "./ui/tooltip-extended";
 export * from "./workspace/AppWorkspaceChrome";
+export * from "./workspace/AppWorkspaceContent";

@@ -17,7 +17,7 @@ import { useAgentElement } from "@elizaos/ui/agent-surface";
 import { client } from "@elizaos/ui/api";
 import { Button, ConfirmDialog, Input, Switch } from "@elizaos/ui/components";
 import { useAppSelector } from "@elizaos/ui/state";
-import { ChevronDown, RefreshCw, Settings2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, RefreshCw, Settings2 } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -42,6 +42,11 @@ export interface CalendarSourceManagerProps {
   sourceHealth: readonly LifeOpsCalendarSourceHealth[];
   onSelectionChanged?: () => void;
   defaultOpen?: boolean;
+  /** Promote source health into this existing disclosure instead of stacking a second notice. */
+  sourceNotice?: {
+    label: string;
+    tone: "warning" | "danger";
+  };
 }
 
 interface SourceToggleProps {
@@ -92,6 +97,7 @@ export function CalendarSourceManager({
   sourceHealth,
   onSelectionChanged,
   defaultOpen = false,
+  sourceNotice,
 }: CalendarSourceManagerProps) {
   const t = useAppSelector((s) => s.t);
   const state = useCalendarSources();
@@ -263,16 +269,26 @@ export function CalendarSourceManager({
 
   return (
     <section
-      className="border-b border-border/12 py-1"
+      className="rounded-xl bg-card/60 px-2 py-1"
       aria-label={t("calendarSources.manage", {
         defaultValue: "Manage calendar sources",
       })}
       data-testid="calendar-source-manager"
+      data-notice-tone={sourceNotice?.tone}
+      data-state={open ? "open" : "closed"}
     >
+      {sourceNotice ? (
+        <span
+          className="sr-only"
+          role="status"
+          aria-label={sourceNotice.label}
+          aria-live="polite"
+        />
+      ) : null}
       <Button
         ref={manageRef}
         variant="sectionToggle"
-        size="content"
+        size="touch"
         align="start"
         aria-controls={contentId}
         aria-expanded={open}
@@ -282,13 +298,38 @@ export function CalendarSourceManager({
         onClick={() => setOpen((current) => !current)}
         {...manageAgentProps}
       >
-        <Settings2 className="size-3.5 shrink-0" aria-hidden />
-        <span className="flex-1">
-          {t("calendarSources.manage", {
-            defaultValue: "Manage calendar sources",
-          })}
+        {sourceNotice ? (
+          <AlertTriangle
+            className={
+              sourceNotice.tone === "danger"
+                ? "size-3.5 shrink-0 text-danger"
+                : "size-3.5 shrink-0 text-warning"
+            }
+            aria-hidden
+          />
+        ) : (
+          <Settings2 className="size-3.5 shrink-0" aria-hidden />
+        )}
+        <span
+          className={`flex-1 ${
+            sourceNotice?.tone === "danger"
+              ? "text-danger"
+              : sourceNotice
+                ? "text-warning"
+                : ""
+          }`}
+          aria-hidden={sourceNotice ? true : undefined}
+        >
+          {sourceNotice?.label ??
+            t("calendarSources.manage", {
+              defaultValue: "Manage calendar sources",
+            })}
         </span>
-        {state.status === "ready" || state.status === "empty" ? (
+        {sourceNotice ? (
+          <span className="font-normal text-muted" aria-hidden>
+            {t("calendarSources.review", { defaultValue: "Review" })}
+          </span>
+        ) : state.status === "ready" || state.status === "empty" ? (
           <span className="font-normal text-muted">
             {t("calendarSources.includedCount", {
               defaultValue: "{{count}} included",
@@ -641,7 +682,7 @@ export function CalendarSourceManager({
                   defaultValue: "Subscription name",
                 })}
                 disabled={icsSubmitting}
-                className="w-40"
+                className="w-full sm:w-40"
               />
               <Input
                 density="denseResponsive"
@@ -654,9 +695,14 @@ export function CalendarSourceManager({
                   defaultValue: "Subscription URL",
                 })}
                 disabled={icsSubmitting}
-                className="min-w-0 flex-1"
+                className="w-full sm:min-w-0 sm:flex-1"
               />
-              <Button type="submit" size="dense" disabled={!icsSubscribeReady}>
+              <Button
+                type="submit"
+                size="dense"
+                className="w-full sm:w-auto"
+                disabled={!icsSubscribeReady}
+              >
                 {icsSubmitting
                   ? t("calendarSources.icsSubscribing", {
                       defaultValue: "Subscribing…",

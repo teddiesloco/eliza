@@ -51,6 +51,10 @@ const cloudOriginMock = vi.hoisted(() => ({
   agentless: false,
 }));
 
+const cloudSessionState = vi.hoisted(() => ({
+  authenticated: false,
+}));
+
 const desktopTabsMock = vi.hoisted(() => ({
   closeTab: vi.fn(),
   openTab: vi.fn(),
@@ -331,6 +335,16 @@ vi.mock("./hooks/useAuthStatus", () => ({
   subscribeAuthStatus: () => vi.fn(),
 }));
 
+vi.mock("./cloud/lib/use-session-auth", () => ({
+  useSessionAuth: () => ({
+    ready: true,
+    authenticated: cloudSessionState.authenticated,
+    user: cloudSessionState.authenticated
+      ? { id: "cloud-user", email: "cloud@example.test" }
+      : null,
+  }),
+}));
+
 vi.mock("./utils/cloud-agent-base", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("./utils/cloud-agent-base")>();
@@ -572,6 +586,7 @@ describe("App navigate-view event wiring", () => {
     appState.tab = "chat";
     authStatusMock.phase = "authenticated";
     cloudOriginMock.agentless = false;
+    cloudSessionState.authenticated = false;
     mediaQueryState.matches = false;
     electrobunRuntimeState.enabled = true;
     desktopTabsState.tabs = [];
@@ -704,6 +719,24 @@ describe("App navigate-view event wiring", () => {
         }),
       );
     });
+    const settingsShellRegion = (
+      await screen.findByTestId("settings-view")
+    ).closest<HTMLElement>('[data-shell-content-region="true"]');
+    expect(settingsShellRegion).not.toBeNull();
+    expect(settingsShellRegion?.className).toContain(
+      "pb-[var(--eliza-chat-clearance,5.25rem)]",
+    );
+    expect(settingsShellRegion?.className).toContain(
+      "pe-[var(--eliza-chat-side-clearance,0px)]",
+    );
+    const routedMain = screen.getByTestId("settings-view").closest("main");
+    expect(routedMain?.className).not.toContain("px-2");
+    expect(routedMain?.className).not.toContain("pt-[var(--view-pad-top)]");
+    expect(
+      screen
+        .getByTestId("settings-view")
+        .closest<HTMLElement>("[data-app-shell-root]")?.style.paddingTop,
+    ).toBe("0px");
   });
 
   it("pins remote views and opens remote view windows through App wiring", async () => {
@@ -818,6 +851,21 @@ describe("App navigate-view event wiring", () => {
     ).not.toBe("0px");
   });
 
+  it.each(["/documents", "/knowledge"])(
+    "keeps the retired Knowledge route %s on the canonical builtin surface",
+    async (path) => {
+      appState.tab = "documents";
+      window.history.replaceState(null, "", path);
+
+      const { findByTestId, queryByTestId } = render(<App />);
+
+      expect(
+        await findByTestId("documents-view", undefined, { timeout: 5_000 }),
+      ).toBeTruthy();
+      expect(queryByTestId("dynamic-view-loader")).toBeNull();
+    },
+  );
+
   it("prefers an exact remote plugin route over its native wallet fallback", async () => {
     mockAvailableViews.push(walletMarketView);
     registerAppShellPage({
@@ -840,7 +888,7 @@ describe("App navigate-view event wiring", () => {
     expect(queryByTestId("native-wallet-fallback")).toBeNull();
   });
 
-  it("keeps remote Cloud rendering and capability ownership together when metadata conflicts", async () => {
+  it("keeps signed-out remote Cloud rendering and capability ownership together for the plugin audit fixture", async () => {
     registerAppShellPage({
       id: "cloud",
       pluginId: "@elizaos/ui:cloud",
@@ -880,6 +928,48 @@ describe("App navigate-view event wiring", () => {
     ]).toEqual([]);
   });
 
+  it.each([
+    ["root", "/cloud"],
+    ["nested", "/cloud/billing"],
+  ])(
+    "gives an authenticated Steward session authoritative %s Cloud dashboard ownership",
+    async (_label, path) => {
+      registerAppShellPage({
+        id: "cloud",
+        pluginId: "@elizaos/ui",
+        label: "Cloud",
+        path: "/cloud",
+        pathPatterns: ["/cloud/*"],
+        surface: { capabilities: ["navigate"] },
+        tabAffinity: "cloud",
+        Component: () => <div data-testid="managed-cloud-page" />,
+      });
+      mockAvailableViews.push({
+        id: "remote-cloud-imposter",
+        label: "Remote Cloud Imposter",
+        available: true,
+        pluginName: "@local/plugin-cloud-imposter",
+        path,
+        bundleUrl: "/api/views/remote-cloud-imposter/bundle.js",
+        viewType: "gui",
+      });
+      cloudSessionState.authenticated = true;
+      appState.tab = "cloud";
+      window.history.replaceState(null, "", path);
+
+      const { getByTestId, queryByTestId } = render(<App />);
+
+      await waitFor(() => getByTestId("managed-cloud-page"));
+      expect(queryByTestId("dynamic-view-loader")).toBeNull();
+      await waitFor(() => {
+        expect(getActiveSurfaceRealmScope()?.viewId).toBe("cloud");
+      });
+      expect([
+        ...(getActiveSurfaceRealmScope()?.manifest.capabilities ?? []),
+      ]).toEqual(["navigate"]);
+    },
+  );
+
   it("gives an in-process wallet page a live agent-surface registry", async () => {
     registerAppShellPage({
       id: "wallet.inventory",
@@ -903,6 +993,52 @@ describe("App navigate-view event wiring", () => {
       getViewRegistry("wallet.inventory", "gui")?.describe("wallet-refresh")
         ?.label,
     ).toBe("Refresh wallet");
+    const walletButton = screen.getByRole("button", {
+      name: "Refresh wallet",
+    });
+    const walletContentRegion = walletButton.closest<HTMLElement>(
+      '[data-shell-content-region="true"]',
+    );
+    expect(walletContentRegion).not.toBeNull();
+    expect(
+      walletContentRegion?.querySelector('[data-shell-scroll-region="true"]'),
+    ).toBeNull();
+    const routedMain = walletButton.closest("main");
+    expect(routedMain?.className).not.toContain("px-2");
+    expect(routedMain?.className).not.toContain("pt-[var(--view-pad-top)]");
+    expect(
+      walletButton.closest<HTMLElement>("[data-app-shell-root]")?.style
+        .paddingTop,
+    ).toBe("0px");
+  });
+
+  it("hands a cold wallet deep link to a deferred app-shell registration", async () => {
+    appState.tab = "inventory";
+    window.history.replaceState(null, "", "/wallet");
+
+    render(<App />);
+
+    expect(
+      (await screen.findByTestId("dynamic-plugin-page-loading")).textContent,
+    ).toBe("Loading wallet.inventory…");
+
+    act(() => {
+      registerAppShellPage({
+        id: "wallet.inventory",
+        pluginId: "@elizaos/plugin-wallet:ui",
+        label: "Wallet",
+        path: "/inventory",
+        tabAffinity: "inventory",
+        Component: () => (
+          <div data-testid="deferred-wallet-page">Wallet ready</div>
+        ),
+      });
+    });
+
+    expect(
+      (await screen.findByTestId("deferred-wallet-page")).textContent,
+    ).toBe("Wallet ready");
+    expect(screen.queryByTestId("dynamic-plugin-page-loading")).toBeNull();
   });
 
   it.each(["/inventory", "/wallet/activity", "/wallet/markets"])(

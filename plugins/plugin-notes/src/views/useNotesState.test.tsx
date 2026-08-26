@@ -39,6 +39,7 @@ vi.mock("./notesData.js", () => ({
   NOTES_STATE_UPDATED_EVENT: "notes:state-updated",
 }));
 
+import { ApiError } from "@elizaos/ui/api/client-types-core";
 import { useNotesState } from "./useNotesState.js";
 
 function snapshot(revision: number): NotesSnapshot {
@@ -93,7 +94,39 @@ describe("useNotesState", () => {
 
     expect(result.current.loading).toBe(false);
     expect(result.current.snapshot).toBeNull();
-    expect(result.current.error).toBe("Local agent is offline");
+    expect(result.current.error?.message).toBe("Local agent is offline");
+  });
+
+  it("preserves the Shared capability ApiError and its retryability payload", async () => {
+    const capabilityData = {
+      success: false,
+      code: "notes_runtime_unavailable",
+      error:
+        "Notes require a dedicated agent runtime; this shared agent does not have a persistent notes store.",
+      capability: "notes",
+      requiredExecutionTier: "dedicated-always",
+      upgradeRequired: true,
+      retryable: false,
+    } as const;
+    const capabilityError = new ApiError({
+      kind: "http",
+      path: "/api/notes/state",
+      status: 503,
+      code: capabilityData.code,
+      message: capabilityData.error,
+      data: capabilityData,
+    });
+    transport.fetchState.mockRejectedValueOnce(capabilityError);
+
+    const { result } = renderHook(() => useNotesState());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe(capabilityError);
+    expect(result.current.error).toMatchObject({
+      name: "ApiError",
+      code: "notes_runtime_unavailable",
+    });
+    expect((result.current.error as ApiError).data).toEqual(capabilityData);
   });
 
   it("recovers stale state from the client's websocket reconnect event", async () => {

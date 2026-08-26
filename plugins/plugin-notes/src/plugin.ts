@@ -64,7 +64,7 @@ export const notesPlugin: Plugin = {
       ],
       bundlePath: "dist/views/bundle.js",
       componentExport: "NotesView",
-      surface: { header: "fullscreen" },
+      surface: { header: "normal" },
       capabilities: NOTES_CAPABILITIES,
       serverInteract,
       visibleInManager: true,

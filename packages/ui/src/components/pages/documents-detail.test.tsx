@@ -105,6 +105,8 @@ describe("DocumentViewer detail load", () => {
     await waitFor(() =>
       expect(screen.getByText("q3-strategy.pdf")).toBeTruthy(),
     );
+    expect(screen.getAllByText("Q3 strategy notes")).toHaveLength(1);
+    expect(screen.queryByText(/position 0/i)).toBeNull();
   });
 
   it("sandboxes the PDF reader iframe (same posture as the chat PdfTile)", async () => {

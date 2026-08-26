@@ -66,7 +66,7 @@ export const calendarPlugin: Plugin = {
       // agent-surface capability so the view broker admits agent-driven
       // fills/clicks (#13452 manifest gate).
       surface: {
-        header: "fullscreen",
+        header: "normal",
         capabilities: ["agent-surface"],
       },
       componentExport: "CalendarView",

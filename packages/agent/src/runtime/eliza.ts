@@ -5528,6 +5528,16 @@ export async function startEliza(
           abortSignal,
         );
         abortSignal.throwIfAborted();
+        const { cacheAgentWalletAddresses } = await import("../api/wallet.ts");
+        cacheAgentWalletAddresses({
+          evmAddress:
+            descriptors.find((descriptor) => descriptor.chain === "evm")
+              ?.address ?? null,
+          solanaAddress:
+            descriptors.find((descriptor) => descriptor.chain === "solana")
+              ?.address ?? null,
+        });
+        abortSignal.throwIfAborted();
         const summary = descriptors
           .map((d) => `${d.chain}:${d.address}`)
           .join(" ");

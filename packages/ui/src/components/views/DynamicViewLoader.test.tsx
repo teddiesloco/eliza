@@ -118,6 +118,13 @@ describe("host-external importer resolution (factory hostImport)", () => {
     expect(typeof api.fetchWithCsrf).toBe("function");
   });
 
+  it("provides the canonical view header to plugin view bundles", async () => {
+    const header = await resolveHostExternal(
+      "@elizaos/ui/components/shared/ViewHeader",
+    );
+    expect(typeof header.ViewHeader).toBe("function");
+  });
+
   it("throws for an unknown specifier that is neither framework nor registered", async () => {
     await expect(
       resolveHostExternal("@test/never-registered-external"),

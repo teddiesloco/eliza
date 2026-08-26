@@ -567,6 +567,8 @@ const HOST_EXTERNAL_IMPORTERS: Record<string, HostExternalImporter> = {
   "@elizaos/ui/components/shared/AppPageSidebar": () =>
     import("../shared/AppPageSidebar.tsx"),
   "@elizaos/ui/components/shared": () => import("../shared/index.ts"),
+  "@elizaos/ui/components/shared/ViewHeader": () =>
+    import("../shared/ViewHeader.tsx"),
   "@elizaos/ui/components/ui/button": () => import("../ui/button.tsx"),
   "@elizaos/ui/components/ui/input": () => import("../ui/input.tsx"),
   "@elizaos/ui/components/ui/select": () => import("../ui/select.tsx"),

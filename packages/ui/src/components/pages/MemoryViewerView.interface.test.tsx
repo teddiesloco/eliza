@@ -13,6 +13,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../api/client-types-core";
 import { __resetResourceCache } from "../../hooks/resource-cache";
 
 const clientMock = vi.hoisted(() => ({
@@ -106,19 +107,22 @@ afterEach(() => {
 });
 
 describe("MemoryViewerView interface contract", () => {
-  it("keeps memory content scrollable above the persistent chat overlay", async () => {
-    const { container } = render(<MemoryViewerView />);
+  it("leaves persistent chat clearance to the shared shell", async () => {
+    render(<MemoryViewerView />);
 
     await screen.findByTestId("memory-card-mem-1");
 
-    const scroller = container.querySelector(".eliza-chat-scroll");
-    expect(scroller).not.toBeNull();
-    expect(scroller?.className).toContain(
-      "pb-[var(--eliza-chat-clearance,5.25rem)]",
-    );
-    expect(scroller?.className).toContain(
-      "pe-[var(--eliza-chat-side-clearance,0px)]",
-    );
+    const workspace = screen.getByTestId("memory-viewer-view");
+    const workspaceMain = workspace.querySelector("main");
+    const scroller = screen.getByTestId("memory-content-scroll-region");
+    expect(workspaceMain).not.toBeNull();
+    expect(workspaceMain?.className).toContain("overflow-y-hidden");
+    expect(workspaceMain?.className).not.toContain("overflow-y-auto");
+    expect(workspaceMain?.querySelectorAll(".overflow-y-auto")).toHaveLength(1);
+    expect(workspaceMain?.querySelector(".overflow-y-auto")).toBe(scroller);
+    expect(scroller.className).not.toContain("eliza-chat-scroll");
+    expect(scroller.className).not.toContain("--eliza-chat-clearance");
+    expect(scroller.className).not.toContain("--eliza-chat-side-clearance");
   });
 
   it("stacks memory cards and exposes expand state", async () => {
@@ -130,7 +134,9 @@ describe("MemoryViewerView interface contract", () => {
 
     fireEvent.click(card);
     expect(card.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("Entity")).not.toBeNull();
+    expect(screen.getByText("Created")).not.toBeNull();
+    expect(screen.queryByText("entity-1")).toBeNull();
+    expect(screen.queryByText("client_chat")).toBeNull();
   });
 
   it("filters the feed from the type dropdown", async () => {
@@ -147,6 +153,127 @@ describe("MemoryViewerView interface contract", () => {
     expect(clientMock.getMemoryFeed).toHaveBeenCalledWith(
       expect.objectContaining({ type: "messages" }),
     );
+  });
+
+  it("shows the seeded library as readable documents without machine labels", async () => {
+    const documents = Array.from({ length: 13 }, (_, index) => ({
+      id: `doc-${index + 1}`,
+      type: "documents",
+      text:
+        index === 0
+          ? "Eliza help: getting started\n\nQ: Where do I begin?\nA: Start with a conversation."
+          : `Reference document ${index + 1}`,
+      source: "eliza-default-documents",
+      createdAt: Date.now() - index,
+      entityId: null,
+      roomId: null,
+    }));
+    clientMock.getMemoryStats.mockResolvedValue({
+      total: 14,
+      byType: { documents: 13, messages: 1 },
+    });
+    clientMock.getMemoryFeed.mockResolvedValue({
+      memories: [
+        {
+          id: "greeting",
+          type: "messages",
+          text: "Welcome back",
+          source: "agent_greeting",
+          createdAt: Date.now(),
+          entityId: null,
+          roomId: null,
+        },
+        ...documents,
+      ],
+      count: 14,
+      limit: 50,
+      hasMore: false,
+    });
+
+    render(<MemoryViewerView />);
+
+    expect(
+      await screen.findByText("Eliza help: getting started"),
+    ).not.toBeNull();
+    expect(screen.getAllByTestId(/^memory-card-/)).toHaveLength(14);
+    expect(screen.getByText(/Where do I begin\?/)).not.toBeNull();
+    expect(screen.queryByText("agent_greeting")).toBeNull();
+    expect(screen.queryByText("eliza-default-documents")).toBeNull();
+  });
+
+  it("keeps raw server errors out of the page state", async () => {
+    clientMock.getMemoryFeed.mockRejectedValue(
+      new ApiError({
+        kind: "http",
+        path: "/api/memories/feed",
+        message: "relation secret_memory_rows does not exist",
+        status: 500,
+      }),
+    );
+
+    render(<MemoryViewerView />);
+
+    expect(
+      await screen.findByText("Memories are temporarily unavailable"),
+    ).not.toBeNull();
+    expect(screen.queryByText(/secret_memory_rows/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
+  });
+
+  it("uses all identities when browsing a selected person's memories", async () => {
+    const person = {
+      groupId: "group-1",
+      primaryEntityId: "entity-1",
+      memberEntityIds: ["entity-1", "entity-alias"],
+      displayName: "Ada Lovelace",
+      aliases: [],
+      platforms: [],
+      identities: [],
+      emails: [],
+      phones: [],
+      websites: [],
+      preferredCommunicationChannel: null,
+      categories: [],
+      tags: [],
+      factCount: 1,
+      relationshipCount: 1,
+    };
+    clientMock.getRelationshipsPeople.mockResolvedValue({ people: [person] });
+    clientMock.getMemoriesByEntity.mockResolvedValue({
+      memories: [
+        {
+          id: "ada-memory",
+          type: "facts",
+          text: "Ada prefers concise updates",
+          source: null,
+          createdAt: Date.now(),
+          entityId: "entity-1",
+          roomId: null,
+        },
+      ],
+      total: 1,
+      totalIsExact: true,
+      hasMore: false,
+      limit: 50,
+      offset: 0,
+    });
+
+    const user = userEvent.setup();
+    render(<MemoryViewerView />);
+    await user.click(await screen.findByTestId("memory-person-picker-trigger"));
+    await user.click(await screen.findByText("Ada Lovelace"));
+
+    await waitFor(() =>
+      expect(clientMock.getMemoriesByEntity).toHaveBeenCalledWith(
+        "entity-1",
+        expect.objectContaining({
+          entityIds: ["entity-1", "entity-alias"],
+        }),
+      ),
+    );
+    expect(
+      await screen.findByText("Ada prefers concise updates"),
+    ).not.toBeNull();
   });
 
   it("loads older tied-timestamp rows with the full tuple cursor", async () => {

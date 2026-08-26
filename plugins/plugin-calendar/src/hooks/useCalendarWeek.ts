@@ -10,7 +10,7 @@ import type {
   LifeOpsCalendarFeedState,
   LifeOpsCalendarSourceHealth,
 } from "@elizaos/shared";
-import { client } from "@elizaos/ui/api";
+import { client, isApiError } from "@elizaos/ui/api";
 import { useAppSelector } from "@elizaos/ui/state";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "../api/client-calendar.js";
@@ -27,6 +27,23 @@ export type CalendarSurfaceStatus =
   | "unavailable"
   | "error";
 
+export type CalendarIssueKind =
+  | "runtime_unavailable"
+  | "authentication"
+  | "permission"
+  | "offline"
+  | "timeout"
+  | "network"
+  | "server"
+  | "unknown";
+
+export interface CalendarIssue {
+  kind: CalendarIssueKind;
+  message: string;
+  retryable: boolean;
+  upgradeRequired: boolean;
+}
+
 export interface UseCalendarWeekOptions {
   viewMode?: CalendarViewMode;
   /** Base date for the window. Defaults to today. */
@@ -40,6 +57,8 @@ export interface UseCalendarWeekResult {
   status: CalendarSurfaceStatus;
   loading: boolean;
   refreshing: boolean;
+  issue: CalendarIssue | null;
+  /** @deprecated Prefer the typed `issue` field. */
   error: string | null;
   viewMode: CalendarViewMode;
   setViewMode: (mode: CalendarViewMode) => void;
@@ -51,6 +70,98 @@ export interface UseCalendarWeekResult {
   goToToday: () => void;
   goPrevious: () => void;
   goNext: () => void;
+}
+
+interface CalendarSnapshot {
+  windowKey: string;
+  events: LifeOpsCalendarEvent[];
+  feedState: LifeOpsCalendarFeedState;
+  sources: LifeOpsCalendarSourceHealth[];
+}
+
+interface CalendarRequestState {
+  windowKey: string;
+  loading: boolean;
+  issue: CalendarIssue | null;
+}
+
+function browserIsOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+function classifyCalendarIssue(
+  cause: unknown,
+  fallbackMessage: string,
+): CalendarIssue {
+  if (isApiError(cause)) {
+    const data =
+      typeof cause.data === "object" && cause.data !== null
+        ? (cause.data as Record<string, unknown>)
+        : null;
+    if (cause.code === "calendar_runtime_unavailable") {
+      return {
+        kind: "runtime_unavailable",
+        message:
+          "Calendar isn’t available with this cloud setup yet. Connect a dedicated agent to use calendar sources.",
+        retryable: false,
+        upgradeRequired: data?.upgradeRequired === true,
+      };
+    }
+    if (cause.status === 401) {
+      return {
+        kind: "authentication",
+        message: "Sign in again to load your calendar.",
+        retryable: false,
+        upgradeRequired: false,
+      };
+    }
+    if (cause.status === 403) {
+      return {
+        kind: "permission",
+        message: "Your account doesn’t have permission to view this calendar.",
+        retryable: false,
+        upgradeRequired: false,
+      };
+    }
+    if (cause.kind === "timeout") {
+      return {
+        kind: "timeout",
+        message: "Calendar took too long to respond. Try again.",
+        retryable: true,
+        upgradeRequired: false,
+      };
+    }
+    if (cause.kind === "network") {
+      return browserIsOffline()
+        ? {
+            kind: "offline",
+            message: "You’re offline. Reconnect to load your calendar.",
+            retryable: true,
+            upgradeRequired: false,
+          }
+        : {
+            kind: "network",
+            message:
+              "Calendar couldn’t connect. Check your connection and try again.",
+            retryable: true,
+            upgradeRequired: false,
+          };
+    }
+    if (cause.kind === "http" && (cause.status ?? 0) >= 500) {
+      return {
+        kind: "server",
+        message: "Calendar is temporarily unavailable. Try again.",
+        retryable: true,
+        upgradeRequired: false,
+      };
+    }
+  }
+  return {
+    kind: "unknown",
+    message: fallbackMessage,
+    retryable: true,
+    upgradeRequired: false,
+  };
 }
 
 function windowDaysForMode(mode: CalendarViewMode): number {
@@ -93,13 +204,10 @@ export function useCalendarWeek(
   const [baseDate, setBaseDate] = useState<Date>(
     () => opts.baseDate ?? new Date(),
   );
-  const [events, setEvents] = useState<LifeOpsCalendarEvent[]>([]);
-  const [feedState, setFeedState] = useState<LifeOpsCalendarFeedState | null>(
+  const [snapshot, setSnapshot] = useState<CalendarSnapshot | null>(null);
+  const [requestState, setRequestState] = useState<CalendarRequestState | null>(
     null,
   );
-  const [sources, setSources] = useState<LifeOpsCalendarSourceHealth[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const windowStart = useMemo(() => {
     const dayStart = startOfLocalDay(baseDate);
@@ -110,6 +218,7 @@ export function useCalendarWeek(
     end.setDate(end.getDate() + windowDaysForMode(viewMode));
     return end;
   }, [windowStart, viewMode]);
+  const windowKey = `${windowStart.toISOString()}|${windowEnd.toISOString()}`;
 
   const shiftBase = useCallback(
     (direction: 1 | -1) => {
@@ -156,8 +265,7 @@ export function useCalendarWeek(
     const isCurrentRequest = () =>
       mountedRef.current && activeRequestId.current === requestId;
 
-    setLoading(true);
-    setError(null);
+    setRequestState({ windowKey, loading: true, issue: null });
     try {
       const feed = await calendarClient.getLifeOpsCalendarFeed({
         side: "owner",
@@ -169,37 +277,50 @@ export function useCalendarWeek(
         a.startAt.localeCompare(b.startAt),
       );
       if (!isCurrentRequest()) return;
-      setEvents(sorted);
-      setFeedState(feed.state);
-      setSources([...feed.sources]);
+      setSnapshot({
+        windowKey,
+        events: sorted,
+        feedState: feed.state,
+        sources: [...feed.sources],
+      });
+      setRequestState({ windowKey, loading: false, issue: null });
     } catch (cause) {
       // error-policy:J4 The calendar renders transport failure separately from an authoritative empty feed.
       if (!isCurrentRequest()) return;
-      setError(
-        cause instanceof Error && cause.message.trim().length > 0
-          ? cause.message.trim()
-          : loadFailedMessage,
-      );
-    } finally {
-      if (isCurrentRequest()) {
-        setLoading(false);
-      }
+      setRequestState({
+        windowKey,
+        loading: false,
+        issue: classifyCalendarIssue(cause, loadFailedMessage),
+      });
     }
-  }, [windowStart, windowEnd, loadFailedMessage]);
+  }, [windowStart, windowEnd, windowKey, loadFailedMessage]);
 
   useEffect(() => {
     void fetch();
   }, [fetch]);
 
+  // Snapshot and request state are keyed together. A render for a newly
+  // selected window therefore masks the prior window immediately, before its
+  // effect starts, while an explicit same-window refresh can keep cached data.
+  const currentSnapshot = snapshot?.windowKey === windowKey ? snapshot : null;
+  const currentRequest =
+    requestState?.windowKey === windowKey ? requestState : null;
+  const events = currentSnapshot?.events ?? [];
+  const feedState = currentSnapshot?.feedState ?? null;
+  const sources = currentSnapshot?.sources ?? [];
+  const loading = currentRequest?.loading ?? true;
+  const issue = currentRequest?.issue ?? null;
+
   const status = useMemo<CalendarSurfaceStatus>(() => {
-    if (error) return "error";
+    if (issue?.kind === "runtime_unavailable") return "unavailable";
+    if (issue) return "error";
     if (feedState === "unavailable") return "unavailable";
     if (feedState === "partial") return "partial";
     if (loading && feedState === null) return "loading";
     if (feedState === "complete" && events.length === 0) return "empty";
     if (feedState === "complete") return "ready";
     return "loading";
-  }, [error, events.length, feedState, loading]);
+  }, [issue, events.length, feedState, loading]);
 
   return {
     events,
@@ -208,7 +329,8 @@ export function useCalendarWeek(
     status,
     loading,
     refreshing: loading && feedState !== null,
-    error,
+    issue,
+    error: issue?.message ?? null,
     viewMode,
     setViewMode,
     baseDate,

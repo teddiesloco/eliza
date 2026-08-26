@@ -85,8 +85,6 @@ const buttonVariants = cva(
           "w-full justify-between bg-transparent text-xs text-muted hover:bg-transparent hover:text-txt",
         overlayEdge:
           "bg-transparent text-inverse/55 hover:bg-transparent hover:text-inverse",
-        memorySidebar:
-          "border border-border bg-card/40 text-txt hover:bg-card/70",
       },
       size: {
         default:
@@ -102,34 +100,50 @@ const buttonVariants = cva(
         tile: "min-h-12 flex-col gap-1 px-2 py-2 text-xs",
         card: "min-h-20 flex-col items-stretch p-3",
         content: "h-auto w-auto min-w-0 p-0",
-        compact: "h-9 rounded-sm px-3 text-xs",
-        dense: "h-8 rounded-sm px-3 text-xs",
-        short: "h-8 rounded-sm px-3 text-sm",
-        regularCompact: "h-9 rounded-sm px-3 text-sm",
-        tiny: "h-7 rounded-sm px-2.5 text-xs",
-        wide: "h-10 rounded-sm px-6 text-sm",
-        micro: "h-6 rounded-sm px-2 py-0 text-xs",
-        tinyWide: "h-7 rounded-sm px-3 text-xs-tight",
-        pill: "h-9 rounded-full px-4 text-xs-tight font-bold tracking-[0.12em]",
+        compact:
+          "h-9 rounded-sm px-3 text-xs pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        dense:
+          "h-8 rounded-sm px-3 text-xs pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        short:
+          "h-8 rounded-sm px-3 text-sm pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        regularCompact:
+          "h-9 rounded-sm px-3 text-sm pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        tiny: "h-7 rounded-sm px-2.5 text-xs pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        wide: "h-10 rounded-sm px-6 text-sm pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        micro:
+          "h-6 rounded-sm px-2 py-0 text-xs pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        tinyWide:
+          "h-7 rounded-sm px-3 text-xs-tight pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        pill: "h-9 rounded-full px-4 text-xs-tight font-bold tracking-[0.12em] pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
         badge:
-          "h-auto rounded-full px-3 py-1.5 text-2xs font-bold tracking-[0.14em]",
-        denseWide: "h-8 rounded-sm px-4 text-xs-tight font-semibold",
+          "h-auto rounded-full px-3 py-1.5 text-2xs font-bold tracking-[0.14em] pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        denseWide:
+          "h-8 rounded-sm px-4 text-xs-tight font-semibold pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
         eventRow: "h-auto min-h-11 w-full items-start gap-1 p-0",
-        formAction: "h-10 rounded-sm px-4 text-xs-tight font-semibold",
+        formAction:
+          "h-10 rounded-sm px-4 text-xs-tight font-semibold pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
         disclosure:
-          "size-5 shrink-0 rounded-sm p-0 text-left text-xs text-muted",
-        pillDense: "h-8 rounded-full px-3 text-xs-tight font-semibold",
+          "size-5 shrink-0 rounded-sm p-0 text-left text-xs text-muted pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        pillDense:
+          "h-8 rounded-full px-3 text-xs-tight font-semibold pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
         fill: "h-full w-full rounded-sm p-0",
-        closeGlyph: "size-8 rounded-sm p-0 text-xl leading-none",
-        inlineIcon: "h-auto px-2 py-0 text-xs",
+        closeGlyph:
+          "size-8 rounded-sm p-0 text-xl leading-none pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        inlineIcon:
+          "h-auto px-2 py-0 text-xs pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
         labeledSm:
           "h-9 gap-2 rounded-sm px-3 py-1.5 pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
         rowContent: "h-auto gap-3 rounded-none p-0 font-normal",
-        labeledTiny: "h-7 gap-1 rounded-sm px-2.5 text-xs",
-        "icon-xs": "size-6 rounded-sm p-0",
-        toolbar: "h-10 rounded-sm px-3 text-sm",
-        carouselControl: "size-8 rounded-sm p-0",
-        pageDrawerTrigger: "h-9.5 rounded-sm px-3 text-sm font-semibold",
+        labeledTiny:
+          "h-7 gap-1 rounded-sm px-2.5 text-xs pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        "icon-xs":
+          "size-6 rounded-sm p-0 pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        toolbar:
+          "h-10 rounded-sm px-3 text-sm pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        carouselControl:
+          "size-8 rounded-sm p-0 pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
+        pageDrawerTrigger:
+          "h-9.5 rounded-sm px-3 text-sm font-semibold pointer-coarse:min-h-touch pointer-coarse:min-w-touch",
         publicTile:
           "h-18 w-full justify-start gap-4 rounded-xs px-5 text-left whitespace-normal",
         memorySidebar:

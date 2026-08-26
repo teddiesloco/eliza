@@ -132,7 +132,7 @@ import { Button } from "./components/ui/button";
 import { KeepAliveViewHost } from "./components/views/KeepAliveViewHost";
 import { ShellViewAgentSurface } from "./components/views/ShellViewAgentSurface";
 import { ViewErrorBoundary } from "./components/views/ViewErrorBoundary";
-import { AppWorkspaceChrome } from "./components/workspace/AppWorkspaceChrome";
+import { AppWorkspaceContent } from "./components/workspace/AppWorkspaceContent";
 import { useBootConfig } from "./config/boot-config-react.hooks";
 import { useBranding } from "./config/branding";
 import {
@@ -171,6 +171,7 @@ import {
   isRouteRootPath,
   NATIVE_OS_VIEW_IDS,
   pathForTab,
+  resolveLegacyBuiltinRoute,
   shouldUseHashNavigation,
   TAB_PATHS,
   type Tab,
@@ -185,6 +186,7 @@ import {
 } from "./platform/app-shell-mode";
 import { isIOS, isNative } from "./platform/init";
 import { RetainedLazyComponent } from "./retained-lazy";
+import { routedShellMainClass } from "./routed-shell-layout";
 import {
   type ActionNotice,
   useAppSelector,
@@ -227,7 +229,7 @@ import { VoiceWorkbenchShell } from "./voice/voice-selftest/VoiceWorkbenchShell"
 
 // NOTE (#view-padding-normalize): the full floating-composer + bottom-nav +
 // safe-area bottom clearance is owned EXACTLY ONCE by the scroll region a view
-// mounts into (`TabScrollView` / `TabContentView` inner scroller, complemented
+// mounts into (`AppWorkspaceContent`'s selected boundary, complemented
 // by `AppWorkspaceChrome`'s safe-area floor). The routed `<main>`
 // (`routedShellMainClass`) deliberately does NOT re-apply that clearance —
 // doing so double-counted it and left an oversized empty band under every view.
@@ -260,6 +262,7 @@ import {
   resolveBuiltinRoutedViewManifest,
   resolveBuiltinTabId,
 } from "./builtin-tab-registry";
+import { useSessionAuth } from "./cloud/lib/use-session-auth";
 import { isManagedCloudRuntime } from "./cloud/managed-cloud-runtime";
 // DesktopTabBar stays static: it is already pulled
 // eagerly elsewhere in the app graph (plugin-loader / boot-config), so a
@@ -430,69 +433,6 @@ function KioskShell() {
   );
 }
 
-function TabScrollView({
-  children,
-  className = "",
-  nav,
-}: {
-  children: ReactNode;
-  className?: string;
-  nav?: ReactNode;
-}) {
-  return (
-    <AppWorkspaceChrome
-      testId="tab-scroll-view"
-      // Transparent over the shared wallpaper (the shell floor covers the
-      // explicitly-opaque routes) — same default as TabContentView.
-      surface="transparent"
-      nav={nav}
-      main={
-        <div
-          data-shell-scroll-region="true"
-          className={`eliza-chat-scroll flex-1 min-h-0 min-w-0 w-full overflow-y-auto pb-[var(--eliza-chat-clearance,5.25rem)] pe-[var(--eliza-chat-side-clearance,0px)] ${className}`}
-        >
-          {children}
-        </div>
-      }
-    />
-  );
-}
-
-function TabContentView({
-  children,
-  // Views sit on the shared launcher wallpaper by default (the shell paints an
-  // opaque floor for the few explicitly-opaque routes), so the workspace panel
-  // is transparent unless a view opts back into its own opaque surface.
-  surface = "transparent",
-  nav,
-  reserveChatClearance = true,
-}: {
-  children: ReactNode;
-  surface?: "opaque" | "transparent";
-  nav?: ReactNode;
-  reserveChatClearance?: boolean;
-}) {
-  return (
-    <AppWorkspaceChrome
-      testId="tab-content-view"
-      surface={surface}
-      nav={nav}
-      main={
-        <div
-          data-shell-content-region="true"
-          className={cn(
-            "eliza-chat-scroll flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden",
-            reserveChatClearance &&
-              "pb-[var(--eliza-chat-clearance,5.25rem)] pe-[var(--eliza-chat-side-clearance,0px)]",
-          )}
-        >
-          {children}
-        </div>
-      }
-    />
-  );
-}
-
 function surfaceOwnsViewport(
   declaration: SurfaceManifestBearer | null | undefined,
 ): boolean {
@@ -514,17 +454,15 @@ function ViewSurfaceFrame({
   const manifest = resolveSurfaceManifest(declaration);
   const showHeader = manifest.header === "normal" && nav === undefined;
   return (
-    <TabContentView
+    <AppWorkspaceContent
       nav={nav}
       reserveChatClearance={!surfaceOwnsViewport(declaration)}
+      header={showHeader ? <ViewHeader title={title} /> : undefined}
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {showHeader ? <ViewHeader title={title} /> : null}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {children}
-        </div>
+        {children}
       </div>
-    </TabContentView>
+    </AppWorkspaceContent>
   );
 }
 
@@ -692,15 +630,16 @@ function DynamicPluginPage({ resolved }: { resolved: ResolvedDynamicPage }) {
 }
 
 function WalletInventoryPage() {
+  // The wallet registration is deliberately deferred until after first paint.
+  // Subscribe here so a cold /wallet deep link hands off to the real page as
+  // soon as that registration arrives instead of freezing the initial miss.
+  const registryVersion = useAppShellPageRegistryVersion();
+  void registryVersion;
   const registration = listAppShellPages().find(
     (entry) => entry.id === "wallet.inventory" || entry.path === "/inventory",
   );
   if (!registration) {
-    return (
-      <div className="flex flex-1 min-h-0 min-w-0 items-center justify-center text-sm text-muted">
-        Wallet is not registered in this build.
-      </div>
-    );
+    return <DynamicPluginFallback id="wallet.inventory" />;
   }
   return <RegisteredAppShellPage registration={registration} />;
 }
@@ -895,6 +834,7 @@ function resolveActiveViewSurface({
   viewLayout,
   enabledKinds,
   managedCloudRuntime,
+  cloudAuthenticated,
 }: {
   tab: string;
   navigationPath: string;
@@ -902,6 +842,7 @@ function resolveActiveViewSurface({
   viewLayout: ActiveViewLayout | null;
   enabledKinds: EnabledViewKinds;
   managedCloudRuntime: boolean;
+  cloudAuthenticated: boolean;
 }): ActiveViewSurface {
   // A split/tile layout or an unregistered builtin route has no manifest bearer;
   // it resolves to the safe default (no grants) — the default-deny baseline.
@@ -917,6 +858,22 @@ function resolveActiveViewSurface({
     enabledKinds,
     managedCloudRuntime,
   );
+  // A canonical Steward session owns the consolidated `/cloud` dashboard.
+  // Keep this decision ahead of runtime-bundle selection so the renderer and
+  // capability broker cannot disagree about which same-path Cloud surface is
+  // active. Signed-out audit/plugin contexts retain normal remote precedence.
+  if (
+    visibleAppShellPage &&
+    authenticatedCloudDashboardOwnsRoute(
+      visibleAppShellPage,
+      cloudAuthenticated,
+    )
+  ) {
+    return {
+      manifest: resolveSurfaceManifest(visibleAppShellPage),
+      viewId: visibleAppShellPage.id,
+    };
+  }
   // Restricted native renderers cannot execute remote bundles, so the signed
   // host page is also the active capability owner there. Web and desktop keep
   // their intentional remote-bundle precedence below.
@@ -1001,6 +958,7 @@ function useActiveViewSurface({
   viewLayout,
   enabledKinds,
   managedCloudRuntime,
+  cloudAuthenticated,
 }: {
   tab: string;
   navigationPath: string;
@@ -1008,6 +966,7 @@ function useActiveViewSurface({
   viewLayout: ActiveViewLayout | null;
   enabledKinds: EnabledViewKinds;
   managedCloudRuntime: boolean;
+  cloudAuthenticated: boolean;
 }): ActiveViewSurface {
   const registryVersion = useAppShellPageRegistryVersion();
   return useMemo(() => {
@@ -1019,9 +978,11 @@ function useActiveViewSurface({
       viewLayout,
       enabledKinds,
       managedCloudRuntime,
+      cloudAuthenticated,
     });
   }, [
     availableViews,
+    cloudAuthenticated,
     enabledKinds,
     managedCloudRuntime,
     navigationPath,
@@ -1085,7 +1046,12 @@ function findRemoteViewForRoute(
   appSlug: string | null,
 ): ViewRegistryEntry | undefined {
   const normalizedPath = trimmedNavigationPath(navigationPath);
-  if (SHELL_RESERVED_PATHS.has(normalizedPath)) return undefined;
+  if (
+    SHELL_RESERVED_PATHS.has(normalizedPath) ||
+    resolveLegacyBuiltinRoute(normalizedPath)
+  ) {
+    return undefined;
+  }
   // Exact plugin paths own their route even when they share a reserved tab
   // affinity such as Wallet. This lets web/desktop mount the agent-served
   // bundle while native shells still fall back to their in-process page.
@@ -1142,6 +1108,17 @@ function findVisibleAppShellPageForRoute(
     : undefined;
 }
 
+function authenticatedCloudDashboardOwnsRoute(
+  registration: AppShellPageRegistration | undefined,
+  cloudAuthenticated: boolean,
+): boolean {
+  return Boolean(
+    cloudAuthenticated &&
+      registration?.id === "cloud" &&
+      registration.pluginId === "@elizaos/ui",
+  );
+}
+
 function viewLayoutLabel(layout: ActiveViewLayout): string {
   return layout.mode === "split" ? "Split view" : "Tiled views";
 }
@@ -1164,10 +1141,12 @@ function viewLayoutGridClass(layout: ActiveViewLayout, count: number): string {
 
 function ViewLayoutSurface({
   availableViews,
+  cloudAuthenticated,
   layout,
   onClear,
 }: {
   availableViews: ViewRegistryEntry[];
+  cloudAuthenticated: boolean;
   layout: ActiveViewLayout;
   onClear: () => void;
 }): ReactNode {
@@ -1191,7 +1170,7 @@ function ViewLayoutSurface({
   };
 
   return (
-    <TabContentView>
+    <AppWorkspaceContent>
       <section
         data-testid="view-layout-surface"
         className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-bg"
@@ -1246,7 +1225,10 @@ function ViewLayoutSurface({
                       surface={view.surface}
                     />
                   ) : (
-                    <ViewRouter routeOverride={routeOverrideForView(view)} />
+                    <ViewRouter
+                      cloudAuthenticated={cloudAuthenticated}
+                      routeOverride={routeOverrideForView(view)}
+                    />
                   )}
                 </div>
               </section>
@@ -1258,7 +1240,7 @@ function ViewLayoutSurface({
           )}
         </div>
       </section>
-    </TabContentView>
+    </AppWorkspaceContent>
   );
 }
 
@@ -1277,9 +1259,9 @@ function renderPhoneSurface(
   Component: ComponentType,
 ): ReactNode {
   return enabled ? (
-    <TabContentView>
+    <AppWorkspaceContent>
       <Component />
-    </TabContentView>
+    </AppWorkspaceContent>
   ) : (
     <ViewUnavailableFallback />
   );
@@ -1295,9 +1277,9 @@ function renderAppsSurface(navigationPath: string): ReactNode {
   // AppsPageView decides between the app runtime and the designed not-found
   // state (#17033), so a dead deep link never renders as the healthy grid.
   return (
-    <TabContentView>
+    <AppWorkspaceContent>
       <AppsPageView appSlug={appSlug} />
-    </TabContentView>
+    </AppWorkspaceContent>
   );
 }
 
@@ -1333,18 +1315,15 @@ function buildStaticTabRenderers(): Record<
   (ctx: StaticTabRenderContext) => ReactNode
 > {
   const wrap = (node: ReactNode) => () => (
-    <TabContentView>{node}</TabContentView>
+    <AppWorkspaceContent>{node}</AppWorkspaceContent>
   );
   // Tool views that own no header of their own get the shared ViewHeader (back
   // button + centered title) via the same flush structure MemoryViewerView uses,
   // so every launcher tool reads the same at the top instead of opening headerless.
   const withHeader = (tab: Tab, node: ReactNode) => () => (
-    <TabContentView>
-      <div className="flex h-full min-h-0 w-full flex-col">
-        <ViewHeader title={titleForTab(tab)} />
-        <div className="min-h-0 flex-1 overflow-hidden">{node}</div>
-      </div>
-    </TabContentView>
+    <AppWorkspaceContent header={<ViewHeader title={titleForTab(tab)} />}>
+      {node}
+    </AppWorkspaceContent>
   );
   return {
     chat: () => <ViewUnavailableFallback />,
@@ -1355,37 +1334,35 @@ function buildStaticTabRenderers(): Record<
     automations: () => <LazyAutomationsFeed />,
     plugins: withHeader("plugins", <LazyPluginsPageView />),
     skills: withHeader("skills", <LazySkillsView />),
-    trajectories: withHeader("trajectories", <LazyTrajectoriesView />),
+    trajectories: wrap(<LazyTrajectoriesView />),
     transcripts: wrap(<LazyLiveMeetingPageView />),
     // Relationships is a Character-family section: the shared CharacterSectionNav
     // (passed as `nav`) owns the "Character" header + strip, so the view renders
     // headerless.
     relationships: ({ characterNav }) => (
-      <TabContentView nav={characterNav}>
+      <AppWorkspaceContent nav={characterNav}>
         <LazyRelationshipsView hideHeader={Boolean(characterNav)} />
-      </TabContentView>
+      </AppWorkspaceContent>
     ),
     documents: wrap(<LazyKnowledgeView />),
     experience: ({ characterNav }) => (
-      <TabContentView nav={characterNav}>
+      <AppWorkspaceContent nav={characterNav}>
         <LazyCharacterExperienceView />
-      </TabContentView>
+      </AppWorkspaceContent>
     ),
     "character-skills": ({ characterNav }) => (
-      <TabContentView nav={characterNav}>
+      <AppWorkspaceContent nav={characterNav}>
         <LazyCharacterSkillsView />
-      </TabContentView>
+      </AppWorkspaceContent>
     ),
     memories: wrap(<LazyMemoryViewerView />),
     files: () => (
-      <TabContentView>
-        <div className="flex h-full min-h-0 w-full flex-col">
-          <ViewHeader title={titleForTab("files")} />
-          <div className="eliza-chat-scroll min-h-0 flex-1 overflow-y-auto pb-[var(--eliza-chat-clearance,5.25rem)]">
-            <LazyFilesView />
-          </div>
-        </div>
-      </TabContentView>
+      <AppWorkspaceContent
+        header={<ViewHeader title={titleForTab("files")} />}
+        layout="scroll"
+      >
+        <LazyFilesView />
+      </AppWorkspaceContent>
     ),
     runtime: withHeader("runtime", <LazyRuntimeView />),
     database: withHeader("database", <LazyDatabasePageView />),
@@ -1396,14 +1373,14 @@ function buildStaticTabRenderers(): Record<
       settingsNavigatePayload,
       settingsNavigateSequence,
     }) => (
-      <TabContentView surface="opaque" reserveChatClearance={false}>
+      <AppWorkspaceContent surface="transparent">
         <LazySettingsView
           key="settings-root"
           initialSection={settingsInitialSection ?? undefined}
           navigatePayload={settingsNavigatePayload}
           navigateSequence={settingsNavigateSequence}
         />
-      </TabContentView>
+      </AppWorkspaceContent>
     ),
     vault: wrap(<LazyVaultPageView />),
     // Camera is an AOSP-ElizaOS-fork-only surface — gate the route on the same
@@ -1418,23 +1395,23 @@ function buildStaticTabRenderers(): Record<
       renderPhoneSurface(nativeOsSurfaceEnabled, LazyContactsPageView),
     views: ({ navigationPath }) => renderAppsSurface(navigationPath),
     apps: ({ navigationPath }) => renderAppsSurface(navigationPath),
-    // Rendered directly (no opaque TabContentView chrome) so the live app
+    // Rendered directly (no routed workspace chrome) so the live app
     // background shows through behind the controls.
     background: () => <LazyBackgroundView />,
     character: ({ characterNav }) => (
-      <TabContentView nav={characterNav}>
+      <AppWorkspaceContent nav={characterNav}>
         <LazyCharacterEditor />
-      </TabContentView>
+      </AppWorkspaceContent>
     ),
     "character-select": ({ characterNav }) => (
-      <TabContentView nav={characterNav}>
+      <AppWorkspaceContent nav={characterNav}>
         <LazyCharacterEditor />
-      </TabContentView>
+      </AppWorkspaceContent>
     ),
     inventory: ({ walletNav }) => (
-      <TabScrollView nav={walletNav}>
+      <AppWorkspaceContent nav={walletNav}>
         <WalletInventoryPage />
-      </TabScrollView>
+      </AppWorkspaceContent>
     ),
   };
 }
@@ -1487,6 +1464,7 @@ function renderViewRouterContent({
   appSlug,
   nativeOsSurfaceEnabled,
   managedCloudRuntime,
+  cloudAuthenticated,
   settingsInitialSection,
   settingsNavigatePayload,
   settingsNavigateSequence,
@@ -1500,6 +1478,7 @@ function renderViewRouterContent({
   appSlug: string | null;
   nativeOsSurfaceEnabled: boolean;
   managedCloudRuntime: boolean;
+  cloudAuthenticated: boolean;
   settingsInitialSection?: string | null;
   settingsNavigatePayload?: unknown;
   settingsNavigateSequence?: number;
@@ -1541,6 +1520,16 @@ function renderViewRouterContent({
       <RegisteredAppShellPage registration={registration} />
     </ViewSurfaceFrame>
   );
+
+  if (
+    visibleAppShellPage &&
+    authenticatedCloudDashboardOwnsRoute(
+      visibleAppShellPage,
+      cloudAuthenticated,
+    )
+  ) {
+    return renderAppShellPage(visibleAppShellPage);
+  }
 
   // Restricted native renderers cannot execute an agent-served bundle. Prefer
   // an exact signed registration at the final renderer boundary even if a
@@ -1608,11 +1597,13 @@ type ViewRouterRouteOverride = {
 };
 
 function ViewRouter({
+  cloudAuthenticated,
   routeOverride,
   settingsInitialSection,
   settingsNavigatePayload,
   settingsNavigateSequence,
 }: {
+  cloudAuthenticated: boolean;
   routeOverride?: ViewRouterRouteOverride;
   settingsInitialSection?: string | null;
   settingsNavigatePayload?: unknown;
@@ -1673,6 +1664,7 @@ function ViewRouter({
     appSlug,
     nativeOsSurfaceEnabled,
     managedCloudRuntime,
+    cloudAuthenticated,
     settingsInitialSection,
     settingsNavigatePayload,
     settingsNavigateSequence,
@@ -1730,6 +1722,7 @@ const APP_SHELL_CLASS_TRANSPARENT =
 type ShellContentProps = {
   actionNotice: ActionNotice | null;
   availableViewsForLayout: ViewRegistryEntry[];
+  cloudAuthenticated: boolean;
   customActionsPanelOpen: boolean;
   desktopTabBar: ReactNode;
   isChat: boolean;
@@ -1771,26 +1764,6 @@ function ChatRouteShellContent(props: ShellContentProps): ReactNode {
   );
 }
 
-function routedShellMainClass(tab: string): string {
-  // One tight page gutter for every routed view: a small side gutter + the
-  // standard `--view-pad-top` content gutter, and NOTHING at the bottom. This
-  // `<main>` is `overflow-hidden` — the real scroll owner (and therefore the
-  // sole owner of the bottom safe-area + floating-composer clearance) is the
-  // view wrapper mounted inside it (`TabScrollView`/`TabContentView`/
-  // `AppWorkspaceChrome`). Adding a bottom pad here on a non-scrolling box
-  // double-counted the clearance the wrapper already reserves, leaving an
-  // oversized empty band under every view (the recurring "too much space at the
-  // bottom" report). Bottom clearance is reserved exactly once, downstream.
-  // Views that own their full surface (apps/views/background) still get zero
-  // padding. (The browser no longer routes here at all — its fullscreen header
-  // takes the full-bleed shell path, like Notes/Calendar.)
-  const pagePadding =
-    tab === "apps" || tab === "views" || tab === "background"
-      ? ""
-      : "px-2 sm:px-3 pt-[var(--view-pad-top)]";
-  return `flex flex-1 min-h-0 min-w-0 overflow-hidden ${pagePadding}`;
-}
-
 /**
  * The single routed shell for every view. ViewRouter already resolves every tab
  * — static page views, dynamic plugin pages, and remote view bundles — so the
@@ -1814,11 +1787,13 @@ function RoutedShellContent(props: ShellContentProps): ReactNode {
         {props.viewLayout ? (
           <ViewLayoutSurface
             availableViews={props.availableViewsForLayout}
+            cloudAuthenticated={props.cloudAuthenticated}
             layout={props.viewLayout}
             onClear={props.onClearViewLayout}
           />
         ) : (
           <ViewRouter
+            cloudAuthenticated={props.cloudAuthenticated}
             settingsInitialSection={props.settingsInitialSection}
             settingsNavigatePayload={props.settingsNavigatePayload}
             settingsNavigateSequence={props.settingsNavigateSequence}
@@ -1837,7 +1812,7 @@ function FullBleedShellContent(props: ShellContentProps): ReactNode {
   return (
     <div key={`fullbleed-shell-${props.tab}`} className={APP_SHELL_CLASS}>
       <main className="flex flex-1 min-h-0 min-w-0 overflow-hidden">
-        <ViewRouter />
+        <ViewRouter cloudAuthenticated={props.cloudAuthenticated} />
       </main>
     </div>
   );
@@ -2782,6 +2757,7 @@ function AppContent() {
   const navigationPath = useCurrentNavigationPath();
   const enabledKinds = useEnabledViewKinds();
   const managedCloudRuntime = isManagedCloudRuntime(startupCoordinator.target);
+  const { authenticated: cloudAuthenticated } = useSessionAuth();
   const screenBackgroundPolicy = useActiveScreenBackgroundPolicy({
     tab,
     navigationPath,
@@ -2806,6 +2782,7 @@ function AppContent() {
     viewLayout,
     enabledKinds,
     managedCloudRuntime,
+    cloudAuthenticated,
   });
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2829,6 +2806,7 @@ function AppContent() {
 
   const isChat = tab === "chat";
   const isSettingsPage = tab === "settings";
+  const isWalletPage = tab === "inventory";
   // Readability scrim over the shared wallpaper for every content view that is
   // NOT an immersive wallpaper surface (chat/background and the launcher roots
   // design directly against the wallpaper); derived from the builtin-tab
@@ -3121,6 +3099,7 @@ function AppContent() {
       <ShellContent
         actionNotice={actionNotice}
         availableViewsForLayout={availableViewsForDesktopTabs}
+        cloudAuthenticated={cloudAuthenticated}
         customActionsPanelOpen={customActionsPanelOpen}
         desktopTabBar={desktopTabBar}
         isChat={isChat}
@@ -3151,6 +3130,7 @@ function AppContent() {
       settingsNavigateSequence,
       desktopTabBar,
       availableViewsForDesktopTabs,
+      cloudAuthenticated,
       viewLayout,
       handleClearViewLayout,
     ],
@@ -3461,9 +3441,10 @@ function AppContent() {
           // clear their status bar. Top banners bleed their bg back up via
           // `.mobile-top-banner:first-child` (styles.css). No-op on web.
           style={{
-            paddingTop: isFullBleed
-              ? 0
-              : "max(calc(var(--safe-area-top, 0px) - 2rem), 0.75rem)",
+            paddingTop:
+              isFullBleed || isSettingsPage || isWalletPage
+                ? 0
+                : "max(calc(var(--safe-area-top, 0px) - 2rem), 0.75rem)",
           }}
         >
           {/* BOTTOM-BAR / SAFE-AREA FLOOR (do not remove): a viewport-filling

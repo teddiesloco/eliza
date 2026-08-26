@@ -21,7 +21,12 @@ export interface NotesState {
   snapshot: NotesSnapshot | null;
   loading: boolean;
   busy: boolean;
-  error: string | null;
+  /**
+   * Keep transport classification intact for the view. In particular, Shared
+   * capability responses carry an ApiError code and structured retryability
+   * data that must not be flattened into display copy here.
+   */
+  error: Error | null;
   refresh: () => Promise<void>;
   mutate: (
     capability: string,
@@ -29,17 +34,17 @@ export interface NotesState {
   ) => Promise<NotesInteractResult>;
 }
 
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error && cause.message.trim()
-    ? cause.message
-    : "Notes could not reach the local agent.";
+function notesError(cause: unknown): Error {
+  return cause instanceof Error
+    ? cause
+    : new Error("Notes could not reach the local agent.", { cause });
 }
 
 export function useNotesState(): NotesState {
   const [snapshot, setSnapshot] = useState<NotesSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const mounted = useRef(true);
   const refreshGeneration = useRef(0);
 
@@ -68,7 +73,7 @@ export function useNotesState(): NotesState {
     } catch (cause) {
       // error-policy:J4 render transport failure distinctly from empty state.
       if (mounted.current && generation === refreshGeneration.current) {
-        setError(errorMessage(cause));
+        setError(notesError(cause));
       }
     } finally {
       if (mounted.current && generation === refreshGeneration.current) {
@@ -125,7 +130,7 @@ export function useNotesState(): NotesState {
         return result;
       } catch (cause) {
         // error-policy:J4 preserve visible state and surface the failed mutation.
-        if (mounted.current) setError(errorMessage(cause));
+        if (mounted.current) setError(notesError(cause));
         throw cause;
       } finally {
         if (mounted.current) setBusy(false);

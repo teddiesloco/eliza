@@ -1051,10 +1051,12 @@ async function runCompatRequestPipeline(
   const readinessFailure = resolveFeatureRouteReadinessFailure(
     pathname,
     state.current !== null,
-    deferredBoot.phases["app-route-tail"],
+    deferredBoot.phases,
   );
   if (readinessFailure) {
-    res.setHeader("Retry-After", "1");
+    if (readinessFailure.retryable) {
+      res.setHeader("Retry-After", "1");
+    }
     sendJsonResponse(res, 503, readinessFailure);
     return;
   }

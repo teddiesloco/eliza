@@ -760,6 +760,11 @@ function resumeRetryDelayMs(res: Response): number {
 const WARMING_RETRYABLE_CODES = new Set([
   "agent_cache_warming",
   "shared_runtime_cache_warming",
+  // App-contributed routes are rejected before dispatch while the runtime's
+  // route tail registers. Reissuing is therefore safe for reads and writes,
+  // and prevents a hot local-agent restart from stranding mounted views in an
+  // unavailable state after a short, expected boot window.
+  "feature_starting",
 ]);
 const WARMING_MAX_RETRIES = 4;
 const WARMING_DEFAULT_DELAY_MS = 1_000;
@@ -771,6 +776,11 @@ const WARMING_MAX_DELAY_MS = 5_000;
 // its wait clamped to whatever budget remains, and once the deadline passes
 // the structured warming error surfaces instead of another retry.
 const WARMING_TOTAL_BUDGET_MS = 5_000;
+// Deferred plugin/app routes can legitimately take longer than a cache warm
+// on a cold desktop or cloud runtime. Keep their request pending through the
+// observable boot tail, while still bounding a broken startup.
+const FEATURE_STARTING_MAX_RETRIES = 30;
+const FEATURE_STARTING_TOTAL_BUDGET_MS = 30_000;
 const SHARED_TURN_CORRELATION_HEADER = "X-ElizaOS-Turn-Correlation";
 const SHARED_TURN_ATTEMPT_HEADER = "X-ElizaOS-Turn-Attempt";
 
@@ -1396,6 +1406,8 @@ export class ElizaClient {
     let resumeRetries = 0;
     let warmingRetries = 0;
     let warmingDeadline: number | null = null;
+    let featureStartingRetries = 0;
+    let featureStartingDeadline: number | null = null;
     let requestAttempt = 0;
     const requestOnce = () =>
       this.rawRequestOnce(
@@ -1528,32 +1540,54 @@ export class ElizaClient {
           ? rawBodyRetryAfter
           : undefined;
       const retryAfter = bodyRetryAfter ?? headerRetryAfter;
-      // Named first-turn warming barrier: wait the advertised Retry-After and
-      // re-issue the same request, bounded by BOTH an attempt cap and a total
-      // elapsed deadline (see WARMING_* above) so the absorbed warm-up stays a
-      // ~5s first-turn budget rather than attempts × max-delay. `allowNonOk`
-      // probes keep the raw 503 — they render their own progress states.
+      // Named pre-admission barrier: wait the advertised Retry-After and
+      // re-issue the same request. Cache warming keeps its short ~5s contract;
+      // deferred feature registration gets a separate cold-boot budget.
+      // `allowNonOk` probes keep the raw 503 because they render progress.
+      const featureStarting = code === "feature_starting";
+      const retryCount = featureStarting
+        ? featureStartingRetries
+        : warmingRetries;
+      const maxRetries = featureStarting
+        ? FEATURE_STARTING_MAX_RETRIES
+        : WARMING_MAX_RETRIES;
       if (
         res.status === 503 &&
         code !== undefined &&
         WARMING_RETRYABLE_CODES.has(code) &&
         !options?.allowNonOk &&
-        warmingRetries < WARMING_MAX_RETRIES &&
+        retryCount < maxRetries &&
         !init?.signal?.aborted
       ) {
         const now = Date.now();
-        if (warmingDeadline === null) {
-          warmingDeadline = now + WARMING_TOTAL_BUDGET_MS;
+        let retryDeadline: number | null = featureStarting
+          ? featureStartingDeadline
+          : warmingDeadline;
+        if (retryDeadline === null) {
+          retryDeadline =
+            now +
+            (featureStarting
+              ? FEATURE_STARTING_TOTAL_BUDGET_MS
+              : WARMING_TOTAL_BUDGET_MS);
+          if (featureStarting) {
+            featureStartingDeadline = retryDeadline;
+          } else {
+            warmingDeadline = retryDeadline;
+          }
         }
-        if (now < warmingDeadline) {
-          warmingRetries += 1;
+        if (now < retryDeadline) {
+          if (featureStarting) {
+            featureStartingRetries += 1;
+          } else {
+            warmingRetries += 1;
+          }
           // Surface the wait like the 202 resume path does — the chat maps
           // this to a `waking` status so the send shows warm-up, not stalled
           // dots.
           notifyWaiting();
           const delay = Math.min(
             warmingRetryDelayMs(retryAfter),
-            warmingDeadline - now,
+            retryDeadline - now,
           );
           await sleepUnlessAborted(delay, init?.signal);
           if (!init?.signal?.aborted) {
