@@ -82,6 +82,7 @@ import {
 import {
   reportUserViewClosed,
   reportUserViewSwitch,
+  shouldClearReportedView,
 } from "./chat/view-navigation-report";
 import { markCompletedActionNavigationHandled } from "./completed-action-navigation";
 import { OverlayAppSurface } from "./components/apps/AppWindowRenderer";
@@ -2812,7 +2813,7 @@ function AppContent() {
   // rendered, and Home/launcher routes clear all scoped tools.
   useEffect(() => {
     if (overlayAppSurfaceActive) return;
-    if (tab === "chat" || tab === "views") {
+    if (shouldClearReportedView(navigationPath)) {
       reportUserViewClosed();
       return;
     }
@@ -2820,7 +2821,7 @@ function AppContent() {
       resolveBuiltinTabId(activeViewSurface.viewId),
       navigationPath,
     );
-  }, [activeViewSurface.viewId, navigationPath, overlayAppSurfaceActive, tab]);
+  }, [activeViewSurface.viewId, navigationPath, overlayAppSurfaceActive]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const scope = new SurfaceRealmScope(

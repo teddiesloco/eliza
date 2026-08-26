@@ -14,6 +14,7 @@ vi.mock("../api", () => ({
 import {
   reportUserViewClosed,
   reportUserViewSwitch,
+  shouldClearReportedView,
 } from "./view-navigation-report";
 
 beforeEach(() => {
@@ -22,6 +23,19 @@ beforeEach(() => {
 });
 
 describe("rendered view lifecycle reports", () => {
+  it("clears only Home/catalog roots, not views rendered inside the generic shell tab", () => {
+    expect(shouldClearReportedView("/")).toBe(true);
+    expect(shouldClearReportedView("/chat")).toBe(true);
+    expect(shouldClearReportedView("/views/")).toBe(true);
+    expect(shouldClearReportedView("/views/legacy-launcher")).toBe(true);
+
+    expect(shouldClearReportedView("/notes")).toBe(false);
+    expect(shouldClearReportedView("/calendar")).toBe(false);
+    expect(shouldClearReportedView("/apps")).toBe(false);
+    expect(shouldClearReportedView("/apps/tasks")).toBe(false);
+    expect(shouldClearReportedView("/apps/custom-plugin")).toBe(false);
+  });
+
   it("publishes the rendered surface through the configured client transport", () => {
     reportUserViewSwitch("wallet.inventory", "/wallet");
 

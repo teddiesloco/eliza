@@ -14,6 +14,23 @@ const VIEW_NAVIGATION_FETCH_TIMEOUT_MS = 15_000;
 
 type ViewNavigationAction = "close" | "close-all";
 
+/**
+ * Only the actual Home/catalog roots have no focused capability owner.
+ * Dynamic plugin routes intentionally keep the generic `views` shell tab, so
+ * the tab id alone must never decide whether to clear the active view.
+ */
+export function shouldClearReportedView(navigationPath: string): boolean {
+  const path = navigationPath.split(/[?#]/, 1)[0]?.trim() || "/";
+  const normalized =
+    path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+  return (
+    normalized === "/" ||
+    normalized === "/chat" ||
+    normalized === "/views" ||
+    normalized.startsWith("/views/")
+  );
+}
+
 async function postViewNavigationReport(args: {
   viewId: string;
   viewPath?: string;
