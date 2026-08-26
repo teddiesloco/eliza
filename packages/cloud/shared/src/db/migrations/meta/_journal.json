@@ -2192,6 +2192,41 @@
       "when": 1794254400020,
       "tag": "0329_personal_dedicated_adoption_selections",
       "breakpoints": true
+    },
+    {
+      "idx": 313,
+      "version": "7",
+      "when": 1794254400021,
+      "tag": "0330_billing_cancel_intent_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 314,
+      "version": "7",
+      "when": 1794254400022,
+      "tag": "0331_billing_cancel_commands",
+      "breakpoints": true
+    },
+    {
+      "idx": 315,
+      "version": "7",
+      "when": 1794254400023,
+      "tag": "0332_billing_cancel_command_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 316,
+      "version": "7",
+      "when": 1794254400024,
+      "tag": "0333_billing_cancel_guard_functions",
+      "breakpoints": true
+    },
+    {
+      "idx": 317,
+      "version": "7",
+      "when": 1794254400025,
+      "tag": "0334_billing_cancel_guards",
+      "breakpoints": true
     }
   ]
 }
