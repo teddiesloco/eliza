@@ -214,12 +214,12 @@ describe("ChatOverlay slash commands", () => {
     expect(controller.send).not.toHaveBeenCalled();
   });
 
-  it("Enter on /clear opens a fresh preserved conversation without sending", () => {
+  it("Enter on /clear is inert — no clear, no send (single infinite thread, #13531)", () => {
     const slash = makeSlash();
     const { input, controller } = renderOverlay(slash);
     fireEvent.change(input, { target: { value: "/clear" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(controller.clearConversation).toHaveBeenCalledTimes(1);
+    expect(controller.clearConversation).not.toHaveBeenCalled();
     expect(slash.clearChat).not.toHaveBeenCalled();
     expect(controller.send).not.toHaveBeenCalled();
     // The draft is still consumed (the command resolved), not left in the box.

@@ -102,16 +102,26 @@ export function enrichChatUiViewMetadata(
   }),
 ): Record<string, unknown> | undefined {
   if (!metadata) return undefined;
+  const {
+    uiViewActionNames: _callerActionNames,
+    ...metadataWithoutActionNames
+  } = metadata;
   if (
     !asString(metadata.uiView) &&
     !asString(metadata.uiViewPath) &&
     !Array.isArray(metadata.uiViewCapabilities)
   ) {
-    return metadata;
+    return _callerActionNames === undefined
+      ? metadata
+      : metadataWithoutActionNames;
   }
 
   const view = resolveChatMetadataView(metadata, views);
-  if (!view) return metadata;
+  if (!view) {
+    const { uiViewCapabilities: _callerCapabilities, ...unresolvedMetadata } =
+      metadataWithoutActionNames;
+    return unresolvedMetadata;
+  }
 
   const declaredCapabilities = uniqueStrings(
     (view.capabilities ?? [])
@@ -125,7 +135,7 @@ export function enrichChatUiViewMetadata(
   ]);
 
   return {
-    ...metadata,
+    ...metadataWithoutActionNames,
     uiView: view.id,
     uiViewPath:
       normalizeViewPath(metadata.uiViewPath) ?? view.path ?? undefined,

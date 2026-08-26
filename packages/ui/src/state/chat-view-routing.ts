@@ -70,14 +70,7 @@ export function resolveChatViewRouting(
       view: "notes",
       primaryContext: "notes",
       secondaryContexts: [],
-      capabilities: [
-        "get-notes",
-        "get-note",
-        "create-note",
-        "update-note",
-        "delete-note",
-        "clear-notes",
-      ],
+      capabilities: [],
     };
   }
   if (viewPath === "/calendar" || viewPath.startsWith("/calendar/")) {
@@ -85,15 +78,7 @@ export function resolveChatViewRouting(
       view: "calendar",
       primaryContext: "calendar",
       secondaryContexts: [],
-      capabilities: ["calendar", "events", "scheduling"],
-    };
-  }
-  if (viewPath === "/wallet" || viewPath.startsWith("/wallet/")) {
-    return {
-      view: "wallet",
-      primaryContext: "wallet",
-      secondaryContexts: [],
-      capabilities: ["inspect-wallet", "configure-wallet-rpc"],
+      capabilities: [],
     };
   }
   if (viewPath === "/apps/tasks" || viewPath.startsWith("/apps/tasks/")) {
@@ -101,7 +86,7 @@ export function resolveChatViewRouting(
       view: "projects",
       primaryContext: "code",
       secondaryContexts: ["automation"],
-      capabilities: ["coding-agent", "task-history", "workspace-control"],
+      capabilities: [],
     };
   }
   if (viewPath === "/apps/memories" || viewPath.startsWith("/apps/memories/")) {
@@ -109,7 +94,7 @@ export function resolveChatViewRouting(
       view: "memories",
       primaryContext: "memory",
       secondaryContexts: [],
-      capabilities: ["memory", "search-memory", "inspect-memory"],
+      capabilities: [],
     };
   }
   if (viewPath === "/orchestrator" || viewPath.startsWith("/orchestrator/")) {
@@ -168,8 +153,8 @@ export function resolveChatViewRouting(
       return {
         view: "wallet",
         primaryContext: "wallet",
-        secondaryContexts: [],
-        capabilities: ["inspect-wallet", "configure-wallet-rpc"],
+        secondaryContexts: ["documents"],
+        capabilities: ["wallet", "portfolio", "transactions"],
       };
     case "plugins":
     case "runtime":
@@ -198,7 +183,7 @@ export function resolveChatViewRouting(
         view: dynamicViewNameFromPath(viewPath),
         primaryContext: "apps",
         secondaryContexts: ["admin", "documents"],
-        capabilities: ["view-actions", "inspect-view", "navigate-view"],
+        capabilities: [],
       };
     default:
       return {

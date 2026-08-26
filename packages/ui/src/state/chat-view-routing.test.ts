@@ -27,7 +27,7 @@ describe("resolveChatViewRouting", () => {
     ).toMatchObject({
       view: "calendar",
       primaryContext: "calendar",
-      capabilities: ["calendar", "events", "scheduling"],
+      capabilities: [],
     });
   });
 
@@ -36,29 +36,20 @@ describe("resolveChatViewRouting", () => {
       view: "notes",
       primaryContext: "notes",
       secondaryContexts: [],
-      capabilities: [
-        "get-notes",
-        "get-note",
-        "create-note",
-        "update-note",
-        "delete-note",
-        "clear-notes",
-      ],
+      capabilities: [],
     });
   });
 
-  it("keeps Wallet chat and voice turns scoped to available read/setup capabilities", () => {
-    expect(resolveChatViewRouting("views", "/wallet")).toEqual({
+  it("does not invent capabilities for plugin routes without declarations", () => {
+    expect(resolveChatViewRouting("views", "/wallet")).toMatchObject({
       view: "wallet",
-      primaryContext: "wallet",
-      secondaryContexts: [],
-      capabilities: ["inspect-wallet", "configure-wallet-rpc"],
+      capabilities: [],
     });
     expect(resolveChatViewRouting("inventory", "/")).toEqual({
       view: "wallet",
       primaryContext: "wallet",
-      secondaryContexts: [],
-      capabilities: ["inspect-wallet", "configure-wallet-rpc"],
+      secondaryContexts: ["documents"],
+      capabilities: ["wallet", "portfolio", "transactions"],
     });
   });
 
@@ -71,7 +62,7 @@ describe("resolveChatViewRouting", () => {
       view: "memories",
       primaryContext: "memory",
       secondaryContexts: [],
-      capabilities: ["memory", "search-memory", "inspect-memory"],
+      capabilities: [],
     });
   });
 

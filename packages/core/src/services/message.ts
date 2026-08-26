@@ -1267,8 +1267,6 @@ function hasUiViewPlannerScope(message: Memory): boolean {
 	return false;
 }
 
-const UI_VIEW_SCAFFOLD_ACTIONS = new Set(["PAGE_DELEGATE", "VIEWS"]);
-
 function uiViewActionNames(message: Memory): Set<string> {
 	const actionNames = new Set<string>();
 	const metadataCandidates = [message.content?.metadata, message.metadata];
@@ -1291,7 +1289,6 @@ function uiViewActionPriority(
 	viewActionNames: ReadonlySet<string>,
 ): number {
 	const actionName = normalizeActionIdentifier(action.name);
-	if (UI_VIEW_SCAFFOLD_ACTIONS.has(actionName)) return 0;
 	if (viewActionNames.has(actionName)) return 0;
 
 	const focusedContexts = (selectedContexts ?? [])
@@ -3472,17 +3469,7 @@ async function collectV5PlannerCandidateActions(args: {
 				.map(({ action }) => action)
 		: allRuntimeActions;
 	for (const action of baseRuntimeActions) {
-		const normalizedActionName = normalizeActionIdentifier(action.name);
-		const isScaffold = UI_VIEW_SCAFFOLD_ACTIONS.has(normalizedActionName);
-		const isFocusedViewAction =
-			focusedViewActionNames.has(normalizedActionName);
-		await appendIfAllowed(
-			action,
-			undefined,
-			isScaffold || isFocusedViewAction
-				? mergeAgentContexts(args.selectedContexts, action.contexts)
-				: args.selectedContexts,
-		);
+		await appendIfAllowed(action, undefined, args.selectedContexts);
 	}
 
 	const explicitCandidateActions = Array.isArray(args.candidateActions)

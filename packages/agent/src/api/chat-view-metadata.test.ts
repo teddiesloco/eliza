@@ -1,3 +1,5 @@
+/** Exercises deterministic server authority over renderer-supplied view metadata without replacing the runtime action gates. */
+
 import type { ViewDeclaration } from "@elizaos/core";
 import { describe, expect, it } from "vitest";
 import {
@@ -66,6 +68,7 @@ describe("chat view metadata", () => {
           uiView: "apps",
           uiViewPath: "/health/today?from=home",
           uiViewCapabilities: ["generic-view-action"],
+          uiViewActionNames: ["EVM_TRANSFER"],
           keep: "caller-data",
         },
         VIEWS,
@@ -102,8 +105,27 @@ describe("chat view metadata", () => {
 
   it("does not reinterpret non-renderer or unknown-view metadata", () => {
     const apiMetadata = { requestId: "r1" };
-    const unknown = { uiView: "unknown", uiViewPath: "/unknown" };
+    const unknown = {
+      uiView: "unknown",
+      uiViewPath: "/unknown",
+      uiViewCapabilities: ["transfer-funds"],
+      uiViewActionNames: ["EVM_TRANSFER"],
+      requestId: "r2",
+    };
     expect(enrichChatUiViewMetadata(apiMetadata, VIEWS)).toBe(apiMetadata);
-    expect(enrichChatUiViewMetadata(unknown, VIEWS)).toBe(unknown);
+    expect(enrichChatUiViewMetadata(unknown, VIEWS)).toEqual({
+      uiView: "unknown",
+      uiViewPath: "/unknown",
+      requestId: "r2",
+    });
+  });
+
+  it("strips action names when no authoritative renderer view resolves", () => {
+    expect(
+      enrichChatUiViewMetadata(
+        { requestId: "r3", uiViewActionNames: ["EVM_TRANSFER"] },
+        VIEWS,
+      ),
+    ).toEqual({ requestId: "r3" });
   });
 });

@@ -396,7 +396,7 @@ describe("v5 tiered action surface", () => {
 
 		const tools = plannerToolNames(runtime);
 		expect(tools).toContain("NOTES");
-		expect(tools).toContain("VIEWS");
+		expect(tools).not.toContain("VIEWS");
 		// Stage 1 may expand beyond the open view when the user explicitly asks.
 		expect(tools).toContain("MESSAGE");
 	});
@@ -410,7 +410,7 @@ describe("v5 tiered action surface", () => {
 		const views = makeAction({
 			name: "VIEWS",
 			description: "Navigate between app views.",
-			contexts: ["general"],
+			contexts: ["notes" as AgentContext, "general"],
 		});
 		const email = makeAction({
 			name: "MESSAGE",
@@ -450,10 +450,10 @@ describe("v5 tiered action surface", () => {
 		expect(tools).toContain("VIEWS");
 		expect(tools).toContain("MESSAGE");
 		expect(tools.indexOf("NOTES")).toBeLessThan(tools.indexOf("MESSAGE"));
-		expect(tools.indexOf("VIEWS")).toBeLessThan(tools.indexOf("MESSAGE"));
+		expect(tools.indexOf("NOTES")).toBeLessThan(tools.indexOf("VIEWS"));
 	});
 
-	it("starts a generic plugin-view turn from its registry-declared action family", async () => {
+	it("does not let focused-view metadata widen action context admission", async () => {
 		const health = makeAction({
 			name: "OWNER_HEALTH",
 			description: "Read the health information shown in the Health view.",
@@ -462,7 +462,12 @@ describe("v5 tiered action surface", () => {
 		const views = makeAction({
 			name: "VIEWS",
 			description: "Navigate between app views.",
-			contexts: ["general"],
+			contexts: ["navigation" as AgentContext],
+		});
+		const pageDelegate = makeAction({
+			name: "PAGE_DELEGATE",
+			description: "Delegate work to the active page.",
+			contexts: ["admin" as AgentContext],
 		});
 		const email = makeAction({
 			name: "MESSAGE",
@@ -470,11 +475,11 @@ describe("v5 tiered action surface", () => {
 			contexts: ["apps" as AgentContext, "general"],
 		});
 		const runtime = makeRuntime({
-			actions: [email, health, views],
+			actions: [email, health, views, pageDelegate],
 			responses: [
 				stage1Response({ contexts: ["apps"], candidateActionNames: [] }),
-				plannerToolResponse("OWNER_HEALTH"),
-				finishEvaluatorResponse("Here is your health summary."),
+				plannerToolResponse("MESSAGE"),
+				finishEvaluatorResponse("I can help from this view."),
 			],
 		});
 
@@ -484,7 +489,7 @@ describe("v5 tiered action surface", () => {
 				uiView: "health",
 				uiViewPath: "/health",
 				uiViewCapabilities: ["read-summary"],
-				uiViewActionNames: ["OWNER_HEALTH"],
+				uiViewActionNames: ["OWNER_HEALTH", "VIEWS", "PAGE_DELEGATE"],
 				__responseContext: {
 					primaryContext: "apps",
 					secondaryContexts: ["apps"],
@@ -495,12 +500,10 @@ describe("v5 tiered action surface", () => {
 		});
 
 		const tools = plannerToolNames(runtime);
-		expect(tools).toContain("OWNER_HEALTH");
-		expect(tools).toContain("VIEWS");
+		expect(tools).not.toContain("OWNER_HEALTH");
+		expect(tools).not.toContain("VIEWS");
+		expect(tools).not.toContain("PAGE_DELEGATE");
 		expect(tools).toContain("MESSAGE");
-		expect(tools.indexOf("OWNER_HEALTH")).toBeLessThan(
-			tools.indexOf("MESSAGE"),
-		);
 	});
 
 	it("admits an unambiguous reversed compound candidate through its own context gate", async () => {
