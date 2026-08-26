@@ -21,13 +21,42 @@ describe("resolveChatViewRouting", () => {
     });
   });
 
-  it("derives a dynamic view name from its normalized route", () => {
+  it("routes Calendar from a normalized fullscreen plugin route", () => {
     expect(
       resolveChatViewRouting("views", "calendar/?day=today"),
     ).toMatchObject({
       view: "calendar",
-      primaryContext: "apps",
-      capabilities: ["view-actions", "inspect-view", "navigate-view"],
+      primaryContext: "calendar",
+      capabilities: ["calendar", "events", "scheduling"],
+    });
+  });
+
+  it("routes fullscreen Notes chat and voice turns to the focused Notes domain", () => {
+    expect(resolveChatViewRouting("views", "/notes")).toEqual({
+      view: "notes",
+      primaryContext: "notes",
+      secondaryContexts: [],
+      capabilities: [
+        "get-notes",
+        "get-note",
+        "create-note",
+        "update-note",
+        "delete-note",
+        "clear-notes",
+      ],
+    });
+  });
+
+  it("routes Projects and Memories by rendered route rather than generic tabs", () => {
+    expect(resolveChatViewRouting("apps", "/apps/tasks")).toMatchObject({
+      view: "projects",
+      primaryContext: "code",
+    });
+    expect(resolveChatViewRouting("views", "/apps/memories/item-1")).toEqual({
+      view: "memories",
+      primaryContext: "memory",
+      secondaryContexts: [],
+      capabilities: ["memory", "search-memory", "inspect-memory"],
     });
   });
 

@@ -90,6 +90,7 @@ function makeRuntime(opts: {
 		// Stage 1 reads the response-bypass channel/source settings before it can
 		// classify a turn as ambient; the fixture configures none of them.
 		getSetting: vi.fn(() => undefined),
+		getModelRegistrations: vi.fn(() => []),
 		reportError: vi.fn(),
 		responseHandlerFieldRegistry,
 		responseHandlerFieldEvaluators: [
@@ -348,6 +349,152 @@ describe("v5 tiered action surface", () => {
 		expect(prompt).toContain("PLAY_MUSIC");
 		expect(prompt).toContain("PAUSE_MUSIC");
 		expect(prompt).not.toContain("SEND_EMAIL");
+	});
+
+	it("starts app turns from the focused view and expands an explicitly requested action", async () => {
+		const notes = makeAction({
+			name: "NOTES",
+			description: "Read or update the notes shown in the open Notes view.",
+			contexts: ["notes" as AgentContext, "general"],
+		});
+		const views = makeAction({
+			name: "VIEWS",
+			description: "Navigate between app views.",
+			contexts: ["general"],
+		});
+		const email = makeAction({
+			name: "MESSAGE",
+			description: "Read or send email.",
+			contexts: ["general"],
+		});
+		const runtime = makeRuntime({
+			actions: [notes, views, email],
+			responses: [
+				stage1Response({
+					contexts: ["notes"],
+					candidateActionNames: ["MESSAGE"],
+				}),
+				plannerToolResponse("MESSAGE"),
+				finishEvaluatorResponse("Checked email."),
+			],
+		});
+
+		await runV5MessageRuntimeStage1({
+			runtime,
+			message: makeMessage("check my email from here", "test", {
+				uiView: "notes",
+				uiViewPath: "/notes",
+				uiViewCapabilities: ["get-notes", "get-note", "create-note"],
+				__responseContext: {
+					primaryContext: "notes",
+					secondaryContexts: ["notes"],
+				},
+			}),
+			state: makeState(),
+			responseId: RESPONSE_ID,
+		});
+
+		const tools = plannerToolNames(runtime);
+		expect(tools).toContain("NOTES");
+		expect(tools).toContain("VIEWS");
+		// Stage 1 may expand beyond the open view when the user explicitly asks.
+		expect(tools).toContain("MESSAGE");
+	});
+
+	it("does not preload unrelated general plugin actions for an app view", async () => {
+		const notes = makeAction({
+			name: "NOTES",
+			description: "Read the notes shown in the open Notes view.",
+			contexts: ["notes" as AgentContext, "general"],
+		});
+		const views = makeAction({
+			name: "VIEWS",
+			description: "Navigate between app views.",
+			contexts: ["general"],
+		});
+		const email = makeAction({
+			name: "MESSAGE",
+			description: "Read or send email.",
+			contexts: ["general"],
+		});
+		const runtime = makeRuntime({
+			actions: [notes, views, email],
+			responses: [
+				stage1Response({
+					contexts: ["notes"],
+					candidateActionNames: ["NOTES"],
+				}),
+				plannerToolResponse("NOTES"),
+				finishEvaluatorResponse("I checked your notes."),
+			],
+		});
+
+		await runV5MessageRuntimeStage1({
+			runtime,
+			message: makeMessage("check my notes", "test", {
+				uiView: "notes",
+				uiViewPath: "/notes",
+				uiViewCapabilities: ["get-notes", "get-note"],
+				__responseContext: {
+					primaryContext: "notes",
+					secondaryContexts: ["notes"],
+				},
+			}),
+			state: makeState(),
+			responseId: RESPONSE_ID,
+		});
+
+		const tools = plannerToolNames(runtime);
+		expect(tools).toContain("NOTES");
+		expect(tools).toContain("VIEWS");
+		expect(tools).not.toContain("MESSAGE");
+	});
+
+	it("starts a generic plugin-view turn from its registry-declared action family", async () => {
+		const health = makeAction({
+			name: "OWNER_HEALTH",
+			description: "Read the health information shown in the Health view.",
+			contexts: ["health" as AgentContext],
+		});
+		const views = makeAction({
+			name: "VIEWS",
+			description: "Navigate between app views.",
+			contexts: ["general"],
+		});
+		const email = makeAction({
+			name: "MESSAGE",
+			description: "Read or send email.",
+			contexts: ["general"],
+		});
+		const runtime = makeRuntime({
+			actions: [health, views, email],
+			responses: [
+				stage1Response({ contexts: ["apps"], candidateActionNames: [] }),
+				plannerToolResponse("OWNER_HEALTH"),
+				finishEvaluatorResponse("Here is your health summary."),
+			],
+		});
+
+		await runV5MessageRuntimeStage1({
+			runtime,
+			message: makeMessage("show me what is here", "test", {
+				uiView: "health",
+				uiViewPath: "/health",
+				uiViewCapabilities: ["read-summary"],
+				uiViewActionNames: ["OWNER_HEALTH"],
+				__responseContext: {
+					primaryContext: "apps",
+					secondaryContexts: ["apps"],
+				},
+			}),
+			state: makeState(),
+			responseId: RESPONSE_ID,
+		});
+
+		const tools = plannerToolNames(runtime);
+		expect(tools).toContain("OWNER_HEALTH");
+		expect(tools).toContain("VIEWS");
+		expect(tools).not.toContain("MESSAGE");
 	});
 
 	it("admits an unambiguous reversed compound candidate through its own context gate", async () => {

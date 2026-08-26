@@ -1246,6 +1246,71 @@ function hasPageScopedRoutingMetadata(message: Memory): boolean {
 }
 
 /**
+ * The first-party app attaches this renderer-owned metadata to chat and voice
+ * turns. It is a relevance boundary, never an authority boundary: it can only
+ * remove unrelated planner tools, while every retained or explicitly
+ * reintroduced action still passes the ordinary role/context/policy gates.
+ */
+function hasUiViewPlannerScope(message: Memory): boolean {
+	const metadataCandidates = [message.content?.metadata, message.metadata];
+	for (const rawMetadata of metadataCandidates) {
+		if (!rawMetadata || typeof rawMetadata !== "object") continue;
+		const metadata = rawMetadata as Record<string, unknown>;
+		if (
+			(typeof metadata.uiView === "string" && metadata.uiView.trim()) ||
+			(typeof metadata.uiViewPath === "string" && metadata.uiViewPath.trim()) ||
+			Array.isArray(metadata.uiViewCapabilities)
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
+const UI_VIEW_SCAFFOLD_ACTIONS = new Set(["PAGE_DELEGATE", "VIEWS"]);
+
+function uiViewActionNames(message: Memory): Set<string> {
+	const actionNames = new Set<string>();
+	const metadataCandidates = [message.content?.metadata, message.metadata];
+	for (const rawMetadata of metadataCandidates) {
+		if (!rawMetadata || typeof rawMetadata !== "object") continue;
+		const rawNames = (rawMetadata as Record<string, unknown>).uiViewActionNames;
+		if (!Array.isArray(rawNames)) continue;
+		for (const rawName of rawNames) {
+			if (typeof rawName !== "string") continue;
+			const normalized = normalizeActionIdentifier(rawName);
+			if (normalized) actionNames.add(normalized);
+		}
+	}
+	return actionNames;
+}
+
+function isUiViewScopedBaseAction(
+	action: Action,
+	selectedContexts: readonly AgentContext[] | undefined,
+	viewActionNames: ReadonlySet<string>,
+): boolean {
+	const actionName = normalizeActionIdentifier(action.name);
+	if (UI_VIEW_SCAFFOLD_ACTIONS.has(actionName)) return true;
+	if (viewActionNames.has(actionName)) return true;
+
+	const focusedContexts = (selectedContexts ?? [])
+		.map((context) => String(context).trim().toLowerCase())
+		.filter(
+			(context) =>
+				context.length > 0 &&
+				context !== "general" &&
+				!isPageScopedRoutingContext(context),
+		);
+	if (focusedContexts.length === 0) return false;
+
+	const focused = new Set(focusedContexts);
+	return (action.contexts ?? []).some((context) =>
+		focused.has(String(context).trim().toLowerCase()),
+	);
+}
+
+/**
  * The provider include list for Stage-1 response-state composition: the core
  * response providers plus always-on plugin providers. Exported for tests.
  */
@@ -3380,8 +3445,34 @@ async function collectV5PlannerCandidateActions(args: {
 		}
 	};
 
-	for (const action of allRuntimeActions) {
-		await appendIfAllowed(action);
+	// App turns begin with the focused view's action family plus the two
+	// navigation/delegation scaffolds. Stage 1 can still reintroduce a named
+	// cross-view action below, so asking for Calendar while Notes is open works;
+	// the planner simply does not pay the context cost of every unrelated plugin
+	// before the user asks for one. Non-app/channel turns keep the historical
+	// complete authorized surface.
+	const focusedViewActionNames = uiViewActionNames(args.message);
+	const baseRuntimeActions = hasUiViewPlannerScope(args.message)
+		? allRuntimeActions.filter((action) =>
+				isUiViewScopedBaseAction(
+					action,
+					args.selectedContexts,
+					focusedViewActionNames,
+				),
+			)
+		: allRuntimeActions;
+	for (const action of baseRuntimeActions) {
+		const normalizedActionName = normalizeActionIdentifier(action.name);
+		const isScaffold = UI_VIEW_SCAFFOLD_ACTIONS.has(normalizedActionName);
+		const isFocusedViewAction =
+			focusedViewActionNames.has(normalizedActionName);
+		await appendIfAllowed(
+			action,
+			undefined,
+			isScaffold || isFocusedViewAction
+				? mergeAgentContexts(args.selectedContexts, action.contexts)
+				: args.selectedContexts,
+		);
 	}
 
 	const explicitCandidateActions = Array.isArray(args.candidateActions)

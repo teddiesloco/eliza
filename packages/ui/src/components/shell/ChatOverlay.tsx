@@ -11,6 +11,7 @@ import {
   Film,
   House,
   Loader2,
+  MessageSquarePlus,
   Mic,
   MicOff,
   Music,
@@ -210,9 +211,9 @@ const EMPTY_SLASH_CONTROLLER: SlashCommandController = {
 
 /**
  * The chat overlay: one always-present, ambient glass conversation
- * that floats over EVERY view. There are no separate chats and no switcher — it
- * is a single endless thread (the app's one active conversation, via
- * useShellController).
+ * that floats over EVERY view. The active thread stays visually continuous
+ * across surfaces; a fresh-thread action remains available when the user wants
+ * a clean context boundary, while prior non-empty threads remain recoverable.
  *
  * Layout is a fixed composer at the bottom with a pull-up history SHEET above
  * it. At rest the sheet is only the composer + grabber; pull the grabber UP, or
@@ -230,9 +231,9 @@ const EMPTY_SLASH_CONTROLLER: SlashCommandController = {
  *     (or, for floating text, a soft shadow) plus fixed light text, never the
  *     theme's `--txt`, so it stays legible over any substrate: a bright view, a
  *     dark view, or the warm "good evening" backdrop.
- *  2. NO CHROME/SIGNAGE — the thread speaks for itself: no message counter, no
- *     "new chat", no tab strip; controls dissolve into the glass, and status is
- *     a soft breath of light, not a brand-colored alert ring.
+ *  2. NO CHROME/SIGNAGE — the thread speaks for itself: no message counter or
+ *     tab strip; infrequent actions live in the existing composer menu, and
+ *     status is a soft breath of light, not a brand-colored alert ring.
  *
  * Pure/presentational: it takes the controller as a prop so it can be rendered
  * in isolation (stories / harness) with a mock. The app wraps it in a small
@@ -4383,13 +4384,12 @@ export function ChatOverlay({
         navigateTab: slash.navigateTab,
         navigateSettings: slash.navigateSettings,
         navigateView: slash.navigateView,
-        // One infinite thread (#13531): the overlay no longer resets/switches
-        // conversations (clear-chat / new-conversation) or toggles full-screen
-        // via a command — maximize is a vertical pull now. These slash paths are
-        // inert in the overlay; the shared subsystem plumbing (first-run/wipe/
-        // switch, CommandPalette, TUI) is untouched and handled elsewhere.
-        clearChat: () => {},
-        newConversation: () => {},
+        // A fresh context boundary is explicit and non-destructive: the
+        // controller preserves a non-empty prior conversation for navigation
+        // while opening a new greeted thread. This also prevents a deliberately
+        // long-lived session from becoming unusable at a provider context limit.
+        clearChat: controller.clearConversation,
+        newConversation: controller.clearConversation,
         toggleFullscreen: () => {},
         openCommandPalette: openPaletteCollapsed,
         showCommands: openPaletteCollapsed,
@@ -4402,7 +4402,14 @@ export function ChatOverlay({
         inputRef.current?.focus();
       }
     },
-    [slash, submitText, setDraft, toggleTranscriptionMode, collapse],
+    [
+      slash,
+      controller.clearConversation,
+      submitText,
+      setDraft,
+      toggleTranscriptionMode,
+      collapse,
+    ],
   );
 
   const submit = React.useCallback(() => {
