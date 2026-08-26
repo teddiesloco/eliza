@@ -1,5 +1,5 @@
 /** Proxies an authenticated Cloud agent's supported wallet operations to its mapped Steward wallet. */
-import { ElizaError } from "@elizaos/core";
+import { ElizaError } from "@elizaos/core/edge";
 import { and, eq } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { dbWrite } from "@/db/helpers";
